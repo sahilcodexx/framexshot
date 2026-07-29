@@ -1,0 +1,30 @@
+[package]
+name = "framexshot"
+version = "0.2.5"
+description = "FrameXShot — Linux screenshot tool"
+authors = ["kartik labhshetwar"]
+edition = "2021"
+
+[lib]
+name = "framexshot"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+base64 = "0.22"
+dirs = "5"
+image = "0.25"
+imageproc = "0.25"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-store = "2"
+tauri-plugin-autostart = "2"
+xcap = "0.8"
+
+# No macOS-only deps (objc2, CoreAudio, Vision, etc.)
