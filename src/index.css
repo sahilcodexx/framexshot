@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-canvas: #090909;
+  --color-background: var(--color-canvas);
+  --color-foreground: #ffffff;
+  --color-card: #141414;
+  --color-card-foreground: #ffffff;
+  --color-popover: #141414;
+  --color-popover-foreground: #ffffff;
+  --color-primary: #ffffff;
+  --color-primary-foreground: #090909;
+  --color-secondary: #1c1c1c;
+  --color-secondary-foreground: #ffffff;
+  --color-muted: #1c1c1c;
+  --color-muted-foreground: #999999;
+  --color-accent: #0099ff;
+  --color-accent-foreground: #ffffff;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #262626;
+  --color-input: #262626;
+  --color-ring: #0099ff;
+  --color-chart-1: #ffffff;
+  --color-chart-2: #999999;
+  --color-chart-3: #1c1c1c;
+  --color-chart-4: #141414;
+  --color-chart-5: #090909;
+  --color-sidebar: #141414;
+  --color-sidebar-foreground: #ffffff;
+  --color-sidebar-primary: #ffffff;
+  --color-sidebar-primary-foreground: #090909;
+  --color-sidebar-accent: #0099ff;
+  --color-sidebar-accent-foreground: #ffffff;
+  --color-sidebar-border: #262626;
+  --color-sidebar-ring: #0099ff;
+
+  --font-sans: Inter Variable, Inter, system-ui, sans-serif;
+  --font-mono: Roboto Mono, monospace;
+  --font-serif: Lora, serif;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
+
+  --shadow-2xs: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-xs: 0 1px 3px rgb(0 0 0 / 0.3);
+  --shadow-sm: 0 2px 4px rgb(0 0 0 / 0.3);
+  --shadow: 0 4px 6px rgb(0 0 0 / 0.3);
+  --shadow-md: 0 6px 12px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 10px 20px rgb(0 0 0 / 0.3);
+  --shadow-xl: 0 15px 30px rgb(0 0 0 / 0.3);
+  --shadow-2xl: 0 20px 40px rgb(0 0 0 / 0.4);
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
