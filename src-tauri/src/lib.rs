@@ -28,7 +28,7 @@ fn show_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Er
             .min_inner_size(800.0, 600.0)
             .center()
             .resizable(true)
-            .decorations(true)
+            .decorations(false)
             .build()?;
 
         let window_clone = window.clone();
@@ -74,7 +74,7 @@ pub fn run() {
                     .min_inner_size(800.0, 600.0)
                     .center()
                     .resizable(true)
-                    .decorations(true)
+                    .decorations(false)
                     .visible(false)
                     .build()?;
 

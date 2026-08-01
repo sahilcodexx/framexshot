@@ -1,44 +1,59 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-canvas: #090909;
+  /* ───── Canvas / base ───── */
+  --color-canvas: #181818;          /* was #090909 — softer near-black */
   --color-background: var(--color-canvas);
-  --color-foreground: #ffffff;
-  --color-card: #141414;
-  --color-card-foreground: #ffffff;
-  --color-popover: #141414;
-  --color-popover-foreground: #ffffff;
-  --color-primary: #ffffff;
-  --color-primary-foreground: #090909;
-  --color-secondary: #1c1c1c;
-  --color-secondary-foreground: #ffffff;
-  --color-muted: #1c1c1c;
-  --color-muted-foreground: #999999;
+  --color-foreground: #f0f0f0;      /* slightly off-white for less eye strain */
+
+  /* ───── Surfaces ───── */
+  --color-card: #202020;            /* was #141414 — lifted slightly */
+  --color-card-foreground: #f0f0f0;
+  --color-popover: #202020;
+  --color-popover-foreground: #f0f0f0;
+
+  /* ───── Interactive surfaces ───── */
+  --color-primary: #f0f0f0;
+  --color-primary-foreground: #181818;
+  --color-secondary: #2a2a2a;       /* was #1c1c1c — lifted */
+  --color-secondary-foreground: #f0f0f0;
+  --color-muted: #2a2a2a;
+  --color-muted-foreground: #888888;
+
+  /* ───── Accent & Semantic ───── */
   --color-accent: #0099ff;
   --color-accent-foreground: #ffffff;
   --color-destructive: #ef4444;
   --color-destructive-foreground: #ffffff;
-  --color-border: #262626;
-  --color-input: #262626;
+
+  /* ───── Structural ───── */
+  --color-border: #2e2e2e;          /* was #262626 — slightly lighter */
+  --color-input: #2e2e2e;
   --color-ring: #0099ff;
-  --color-chart-1: #ffffff;
-  --color-chart-2: #999999;
-  --color-chart-3: #1c1c1c;
-  --color-chart-4: #141414;
-  --color-chart-5: #090909;
-  --color-sidebar: #141414;
-  --color-sidebar-foreground: #ffffff;
-  --color-sidebar-primary: #ffffff;
-  --color-sidebar-primary-foreground: #090909;
+
+  /* ───── Sidebar ───── */
+  --color-sidebar: #1e1e1e;         /* was #141414 */
+  --color-sidebar-foreground: #f0f0f0;
+  --color-sidebar-primary: #f0f0f0;
+  --color-sidebar-primary-foreground: #181818;
   --color-sidebar-accent: #0099ff;
   --color-sidebar-accent-foreground: #ffffff;
-  --color-sidebar-border: #262626;
+  --color-sidebar-border: #2e2e2e;
   --color-sidebar-ring: #0099ff;
 
+  /* ───── Charts ───── */
+  --color-chart-1: #f0f0f0;
+  --color-chart-2: #888888;
+  --color-chart-3: #2a2a2a;
+  --color-chart-4: #202020;
+  --color-chart-5: #181818;
+
+  /* ───── Typography ───── */
   --font-sans: Inter Variable, Inter, system-ui, sans-serif;
   --font-mono: Roboto Mono, monospace;
   --font-serif: Lora, serif;
 
+  /* ───── Radii ───── */
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
@@ -46,14 +61,15 @@
   --radius-2xl: 1.5rem;
   --radius-3xl: 2rem;
 
-  --shadow-2xs: 0 1px 2px rgb(0 0 0 / 0.3);
-  --shadow-xs: 0 1px 3px rgb(0 0 0 / 0.3);
-  --shadow-sm: 0 2px 4px rgb(0 0 0 / 0.3);
-  --shadow: 0 4px 6px rgb(0 0 0 / 0.3);
-  --shadow-md: 0 6px 12px rgb(0 0 0 / 0.3);
-  --shadow-lg: 0 10px 20px rgb(0 0 0 / 0.3);
-  --shadow-xl: 0 15px 30px rgb(0 0 0 / 0.3);
-  --shadow-2xl: 0 20px 40px rgb(0 0 0 / 0.4);
+  /* ───── Shadows (warm black on dark) ───── */
+  --shadow-2xs: 0 1px 2px rgb(0 0 0 / 0.35);
+  --shadow-xs:  0 1px 3px rgb(0 0 0 / 0.35);
+  --shadow-sm:  0 2px 4px rgb(0 0 0 / 0.35);
+  --shadow:     0 4px 6px rgb(0 0 0 / 0.35);
+  --shadow-md:  0 6px 12px rgb(0 0 0 / 0.35);
+  --shadow-lg:  0 10px 20px rgb(0 0 0 / 0.35);
+  --shadow-xl:  0 15px 30px rgb(0 0 0 / 0.35);
+  --shadow-2xl: 0 20px 40px rgb(0 0 0 / 0.45);
 }
 
 * {
@@ -65,6 +81,24 @@ body {
   color: var(--color-foreground);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ───── Smooth scroll for ALL scrollable panels ───── */
+.sidebar-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  contain: strict;
+}
+
+/* Hide scrollbar but keep scrollability */
+.sidebar-scroll::-webkit-scrollbar {
+  display: none;
+}
+.sidebar-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
