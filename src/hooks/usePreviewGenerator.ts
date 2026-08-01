@@ -140,12 +140,17 @@ function renderFullCanvas(
   const framePad = (settings.framePadding !== undefined && settings.framePadding >= 0)
     ? settings.framePadding
     : styleDef.padding;
-  const extraX = Math.round(screenshotImage.width * extraFactor);
-  const extraY = Math.round(screenshotImage.height * extraFactor);
+
+  const scale = settings.imageScale ?? 1.0;
+  const scaledWidth = Math.round(screenshotImage.width * scale);
+  const scaledHeight = Math.round(screenshotImage.height * scale);
+
+  const extraX = Math.round(scaledWidth * extraFactor);
+  const extraY = Math.round(scaledHeight * extraFactor);
   const bgWidth =
-    screenshotImage.width + paddingLeft + paddingRight + extraX * 2 + framePad * 2;
+    scaledWidth + paddingLeft + paddingRight + extraX * 2 + framePad * 2;
   const bgHeight =
-    screenshotImage.height + paddingTop + paddingBottom + extraY * 2 + framePad * 2;
+    scaledHeight + paddingTop + paddingBottom + extraY * 2 + framePad * 2;
   const contentPadL = paddingLeft + extraX + framePad;
   const contentPadT = paddingTop + extraY + framePad;
 
@@ -161,10 +166,10 @@ function renderFullCanvas(
   const totalPadding = paddingTop + paddingBottom + paddingLeft + paddingRight;
   if (totalPadding === 0) {
     ctx.beginPath();
-    ctx.roundRect(0, 0, screenshotImage.width, screenshotImage.height, settings.borderRadius);
+    ctx.roundRect(0, 0, scaledWidth, scaledHeight, settings.borderRadius);
     ctx.closePath();
     ctx.clip();
-    ctx.drawImage(screenshotImage, 0, 0);
+    ctx.drawImage(screenshotImage, 0, 0, scaledWidth, scaledHeight);
     return canvas;
   }
 
@@ -189,10 +194,12 @@ function renderFullCanvas(
 
   const contentW = framed.width;
   const contentH = framed.height;
-  const availableW = screenshotImage.width + framePad * 2;
-  const availableH = screenshotImage.height + framePad * 2;
-  const drawX = contentPadL + (availableW - contentW) / 2;
-  const drawY = contentPadT + (availableH - contentH) / 2;
+
+  // Independent position offset (pan) on the background canvas
+  const offsetX = settings.imageOffsetX ?? 0;
+  const offsetY = settings.imageOffsetY ?? 0;
+  const drawX = contentPadL + offsetX;
+  const drawY = contentPadT + offsetY;
 
   const layout = getLayoutTransform(layoutId);
   const needsTransform = isLayoutTransformed(layoutId);
@@ -238,9 +245,13 @@ function buildFramedScreenshot(
   const headerHeight = frameType === "none" ? 0 : 36;
   const borderRadius = settings.borderRadius ?? 12;
 
+  const scale = settings.imageScale ?? 1.0;
+  const scaledW = Math.round(screenshotImage.width * scale);
+  const scaledH = Math.round(screenshotImage.height * scale);
+
   const imageCanvas = document.createElement("canvas");
-  imageCanvas.width = screenshotImage.width;
-  imageCanvas.height = screenshotImage.height + headerHeight;
+  imageCanvas.width = scaledW;
+  imageCanvas.height = scaledH + headerHeight;
   const imageCtx = imageCanvas.getContext("2d");
   if (!imageCtx) return null;
 
@@ -289,18 +300,8 @@ function buildFramedScreenshot(
     imageCtx.stroke();
   }
 
-  // Draw screenshot — apply user-controlled scale and position offset
-  {
-    const scale = settings.imageScale ?? 1.0;
-    const offsetX = settings.imageOffsetX ?? 0;
-    const offsetY = settings.imageOffsetY ?? 0;
-    const scaledW = screenshotImage.width * scale;
-    const scaledH = screenshotImage.height * scale;
-    // Center the scaled image within the image area, then apply user pan offset
-    const drawX = (screenshotImage.width - scaledW) / 2 + offsetX;
-    const drawY = headerHeight + (screenshotImage.height - scaledH) / 2 + offsetY;
-    imageCtx.drawImage(screenshotImage, drawX, drawY, scaledW, scaledH);
-  }
+  // Draw screenshot image scaled to scaledW x scaledH — no cropping!
+  imageCtx.drawImage(screenshotImage, 0, headerHeight, scaledW, scaledH);
 
   // Apply glass / inset / outline / border frame chrome
   const frameStyle = getFrameStyle(settings.frameStyle || "default");
@@ -508,20 +509,27 @@ export function usePreviewGenerator({
 
       if (currentRenderId !== renderIdRef.current) return;
 
-      canvas.width = rendered.width;
-      canvas.height = rendered.height;
+      // Downscale preview canvas for instant live preview (max 1400px width/height)
+      // Keeps slider dragging and zooming ultra-smooth at 60fps!
+      const MAX_PREVIEW_DIM = 1400;
+      const previewScale = Math.min(1.0, MAX_PREVIEW_DIM / Math.max(rendered.width, rendered.height));
+
+      canvas.width = Math.round(rendered.width * previewScale);
+      canvas.height = Math.round(rendered.height * previewScale);
       const ctx = canvas.getContext("2d", { alpha: true });
       if (!ctx) {
         setError("Failed to get canvas context");
         return;
       }
-      ctx.drawImage(rendered, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(rendered, 0, 0, canvas.width, canvas.height);
 
       if (previewUrlRef.current) {
         URL.revokeObjectURL(previewUrlRef.current);
         previewUrlRef.current = null;
       }
-      const url = canvas.toDataURL("image/jpeg", 0.85);
+      const url = canvas.toDataURL("image/jpeg", 0.80);
       previewUrlRef.current = url;
       setPreviewUrl(url);
       setIsGenerating(false);
