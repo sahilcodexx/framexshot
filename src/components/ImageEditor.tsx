@@ -2,7 +2,8 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { toast } from "sonner";
-import { Loader2, Redo2, Undo2 } from "lucide-react";
+import { Loader2, Redo2, Undo2, Palette, Image as ImageIcon, LayoutGrid, Box } from "lucide-react";
+import { TitleBar } from "@/components/TitleBar";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { BackgroundSelector, gradientOptions } from "./editor/BackgroundSelector";
@@ -167,7 +168,7 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
     editorActions.initialize();
   }, []);
 
-  // Restore window state on mount
+  // Restore window state on mount (keep decorations OFF — we use custom TitleBar)
   useEffect(() => {
     const restoreWindowState = async () => {
       try {
@@ -176,9 +177,9 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
           appWindow.setFullscreen(false),
           appWindow.setAlwaysOnTop(false),
         ]);
-        await appWindow.setDecorations(true);
+        // Intentionally NOT calling setDecorations(true) — custom TitleBar handles chrome
       } catch (err) {
-        console.error("Failed to restore window decorations:", err);
+        console.error("Failed to restore window state:", err);
       }
     };
     restoreWindowState();
@@ -411,310 +412,393 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
   // Find selected gradient for BackgroundSelector
   const selectedGradientOption = gradientOptions.find(g => g.id === settings.gradientId) || gradientOptions[0];
 
+  // Right sidebar tab state for ultra-smooth performance
+  const [activeTab, setActiveTab] = useState<"bg" | "wallpapers" | "frame" | "layout">("bg");
+
   return (
-    <div className="flex w-full h-full bg-[#000000] text-foreground font-sans">
-      {/* Left Sidebar */}
-      <div className="w-[300px] shrink-0 border-r border-[#1a1a1a] bg-[#0a0a0a] flex flex-col overflow-y-auto [&::-webkit-scrollbar]:hidden">
-        <div className="p-4 flex items-center justify-between border-b border-[#1a1a1a] sticky top-0 bg-[#0a0a0a]/90 backdrop-blur z-10">
-          <h2 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
-            <div className="size-4 rounded-sm bg-gradient-to-br from-blue-500 to-purple-600" />
-            FrameXShot
-          </h2>
-        </div>
-        <div className="p-5 space-y-8 pb-10">
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Background</h3>
-            <BackgroundSelector
-              backgroundType={settings.backgroundType as "transparent" | "white" | "black" | "gray" | "gradient" | "custom"}
-              customColor={settings.customColor}
-              selectedGradient={selectedGradientOption.id}
-              onBackgroundTypeChange={actions.setBackgroundType}
-              onCustomColorChange={actions.setCustomColor}
-              onGradientSelect={actions.setGradient}
-            />
-          </div>
+    <div className="flex flex-col w-full h-full bg-[#181818] text-foreground font-sans select-none">
+      {/* Custom Mac-style Title Bar */}
+      <TitleBar />
 
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Media</h3>
-            <AssetGrid
-              categories={assetCategories}
-              selectedImage={settings.selectedImageSrc}
-              backgroundType={settings.backgroundType}
-              onImageSelect={actions.handleImageSelect}
-            />
-          </div>
-
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Style</h3>
-            <StyleSelector
-              frameStyle={settings.frameStyle || "default"}
-              framePadding={settings.framePadding ?? 0}
-              frameOpacity={settings.frameOpacity ?? 100}
-              onChange={actions.setFrameStyle}
-              onFramePaddingChangeTransient={actions.setFramePaddingTransient}
-              onFramePaddingChange={actions.setFramePadding}
-              onFrameOpacityChangeTransient={actions.setFrameOpacityTransient}
-              onFrameOpacityChange={actions.setFrameOpacity}
-            />
-          </div>
-
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Layout Presets</h3>
-            <LayoutPresets
-              layoutPreset={settings.layoutPreset || "flat"}
-              onChange={actions.setLayoutPreset}
-              previewUrl={previewUrl}
-            />
-          </div>
-
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Mockup Frame</h3>
-            <MockupSelector
-              windowFrame={settings.windowFrame || "none"}
-              onChange={actions.setWindowFrame}
-            />
-          </div>
-
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Border</h3>
-            <BorderPresets
-              borderPreset={settings.borderPreset || "curved"}
-              borderRadius={settings.borderRadius}
-              onPresetChange={actions.setBorderPreset}
-              onBorderRadiusChangeTransient={actions.setBorderRadiusTransient}
-              onBorderRadiusChange={actions.setBorderRadius}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Center Canvas Area */}
-      <div className="flex-1 flex flex-col relative overflow-hidden bg-[#050505]">
-        {/* Floating Top Toolbar */}
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 bg-[#141414]/90 backdrop-blur-xl p-1.5 rounded-full border border-[#2a2a2a] shadow-2xl">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleUndo}
-                  disabled={!canUndo}
-                  className="size-8 rounded-full text-muted-foreground hover:text-white disabled:opacity-30"
-                >
-                  <Undo2 className="size-4" aria-hidden="true" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs bg-[#1a1a1a] border-[#2a2a2a]">Undo ⌘Z</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleRedo}
-                  disabled={!canRedo}
-                  className="size-8 rounded-full text-muted-foreground hover:text-white disabled:opacity-30"
-                >
-                  <Redo2 className="size-4" aria-hidden="true" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs bg-[#1a1a1a] border-[#2a2a2a]">Redo ⌘⇧Z</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
-          <div className="w-[1px] h-4 bg-[#333] mx-2" />
-
-          <AnnotationToolbar
-            selectedTool={selectedTool}
-            onToolSelect={setSelectedTool}
-            onDelete={selectedAnnotation ? handleDeleteSelected : undefined}
-          />
-        </div>
-
-        {/* Main Canvas */}
-        <div className="flex-1 flex items-center justify-center p-12 overflow-hidden min-w-0 min-h-0 relative">
-          <div className="w-full h-full flex items-center justify-center min-w-0 min-h-0 z-10">
-            {previewUrl ? (
-              <AnnotationCanvas
-                annotations={annotations}
-                selectedAnnotation={selectedAnnotation}
-                selectedTool={selectedTool}
-                previewUrl={previewUrl}
-                showTransparencyGrid={settings.backgroundType === "transparent"}
-                onAnnotationAdd={handleAnnotationAdd}
-                onAnnotationUpdate={handleAnnotationUpdate}
-                onAnnotationSelect={setSelectedAnnotation}
-                onAnnotationDelete={handleAnnotationDelete}
-              />
-            ) : imageLoaded ? (
-              <div className="text-muted-foreground text-sm">Generating preview...</div>
-            ) : error ? (
-              <div className="text-center text-red-400 p-5">
-                <p className="mb-1 text-sm font-medium">Could not load image</p>
-                <small className="text-xs opacity-70">{error}</small>
-              </div>
-            ) : (
-              <div className="text-muted-foreground text-sm flex items-center gap-2">
-                <Loader2 className="size-4 animate-spin" />
-                Loading image...
-              </div>
-            )}
-            <canvas ref={canvasRef} style={{ display: "none" }} />
-          </div>
-        </div>
-      </div>
-
-      {/* Right Sidebar */}
-      <div className="w-[300px] shrink-0 border-l border-[#1a1a1a] bg-[#0a0a0a] flex flex-col overflow-y-auto [&::-webkit-scrollbar]:hidden">
-        <div className="p-4 flex gap-2 border-b border-[#1a1a1a] sticky top-0 bg-[#0a0a0a]/90 backdrop-blur z-10">
-          <Button 
-            variant="ghost"
-            onClick={onCancel}
-            className="flex-1 h-9 rounded-md bg-[#1a1a1a] hover:bg-[#222] text-sm font-medium border border-[#2a2a2a]"
-          >
-            Cancel
-          </Button>
-          <Button 
-            variant="ghost"
-            onClick={handleCopy} 
-            disabled={!imageLoaded || isSaving || isCopying}
-            className="flex-1 h-9 rounded-md bg-[#1a1a1a] hover:bg-[#222] text-sm font-medium border border-[#2a2a2a] disabled:opacity-50"
-          >
-            {isCopying ? <Loader2 className="size-4 animate-spin" /> : "Copy"}
-          </Button>
-          <Button 
-            variant="default"
-            onClick={handleSave} 
-            disabled={!imageLoaded || isSaving || isCopying}
-            className="flex-1 h-9 rounded-md bg-white text-black hover:bg-white/90 text-sm font-medium disabled:opacity-50"
-          >
-            {isSaving ? <Loader2 className="size-4 animate-spin" /> : "Export"}
-          </Button>
-        </div>
-
-        <div className="p-5 space-y-8 pb-10">
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Image</h3>
-            <ImagePositionControl
-              imageScale={settings.imageScale ?? 1.0}
-              imageOffsetX={settings.imageOffsetX ?? 0}
-              imageOffsetY={settings.imageOffsetY ?? 0}
-              onScaleChangeTransient={actions.setImageScaleTransient}
-              onScaleChange={actions.setImageScale}
-              onOffsetTransient={actions.setImageOffsetTransient}
-              onOffsetCommit={actions.setImageOffset}
-              onReset={actions.resetImageTransform}
-            />
-          </div>
-
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Properties</h3>
-            {selectedAnnotation ? (
-              <PropertiesPanel annotation={selectedAnnotation} onUpdate={handleAnnotationUpdate} />
-            ) : (
-              <div className="text-sm text-muted-foreground text-center py-6 bg-[#141414] rounded-lg border border-[#1a1a1a]">
-                Select an annotation to edit
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Shadow</h3>
-            <ShadowPresets
-              shadowPreset={settings.shadowPreset || "spread"}
-              opacity={settings.shadow.opacity}
-              showMockup={settings.showMockup !== false}
-              onPresetChange={actions.setShadowPreset}
-              onOpacityChangeTransient={actions.setShadowOpacityTransient}
-              onOpacityChange={actions.setShadowOpacity}
-              onToggleMockup={() => actions.setShowMockup(!(settings.showMockup !== false))}
+      <div className="flex flex-1 min-h-0">
+        {/* Left Sidebar — Actions, Image Transform, Properties, Shadow & Effects */}
+        <div className="w-[300px] shrink-0 border-r border-[#252525] bg-[#1a1a1a] flex flex-col sidebar-scroll">
+          {/* Action buttons bar */}
+          <div className="p-3 flex gap-2 border-b border-[#252525] sticky top-0 bg-[#1a1a1a]/95 backdrop-blur z-10">
+            <Button 
+              variant="ghost"
+              onClick={onCancel}
+              className="flex-1 h-8 rounded-md bg-[#252525] hover:bg-[#2e2e2e] text-xs font-medium border border-[#333]"
             >
-              {/* Advanced shadow sliders — shown under presets */}
-              {settings.shadowPreset !== "none" && (
-                <div className="space-y-4 pt-1">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs text-muted-foreground font-medium">Blur</label>
-                      <span className="text-xs text-muted-foreground font-mono tabular-nums">{settings.shadow.blur}px</span>
-                    </div>
-                    <EffectsPanel
-                      // Only used for the advanced sliders via a compact mode — keep full panel below for bg effects
-                      blurAmount={settings.blurAmount}
-                      noiseAmount={settings.noiseAmount}
-                      paddingTop={settings.paddingTop}
-                      paddingBottom={settings.paddingBottom}
-                      paddingLeft={settings.paddingLeft}
-                      paddingRight={settings.paddingRight}
-                      shadow={settings.shadow}
-                      onBlurAmountChangeTransient={actions.setBlurAmountTransient}
-                      onNoiseChangeTransient={actions.setNoiseAmountTransient}
-                      onPaddingTopChangeTransient={actions.setPaddingTopTransient}
-                      onPaddingBottomChangeTransient={actions.setPaddingBottomTransient}
-                      onPaddingLeftChangeTransient={actions.setPaddingLeftTransient}
-                      onPaddingRightChangeTransient={actions.setPaddingRightTransient}
-                      onAllPaddingChangeTransient={actions.setAllPaddingTransient}
-                      onShadowBlurChangeTransient={actions.setShadowBlurTransient}
-                      onShadowOffsetXChangeTransient={actions.setShadowOffsetXTransient}
-                      onShadowOffsetYChangeTransient={actions.setShadowOffsetYTransient}
-                      onShadowOpacityChangeTransient={actions.setShadowOpacityTransient}
-                      onBlurAmountChange={actions.setBlurAmount}
-                      onNoiseChange={actions.setNoiseAmount}
-                      onPaddingTopChange={actions.setPaddingTop}
-                      onPaddingBottomChange={actions.setPaddingBottom}
-                      onPaddingLeftChange={actions.setPaddingLeft}
-                      onPaddingRightChange={actions.setPaddingRight}
-                      onAllPaddingChange={actions.setAllPadding}
-                      onShadowBlurChange={actions.setShadowBlur}
-                      onShadowOffsetXChange={actions.setShadowOffsetX}
-                      onShadowOffsetYChange={actions.setShadowOffsetY}
-                      onShadowOpacityChange={actions.setShadowOpacity}
-                      onSaveAsDefaults={actions.saveEffectSettingsAsDefaults}
-                      onResetPadding={handleResetPadding}
-                      shadowOnly
-                    />
-                  </div>
+              Cancel
+            </Button>
+            <Button 
+              variant="ghost"
+              onClick={handleCopy} 
+              disabled={!imageLoaded || isSaving || isCopying}
+              className="flex-1 h-8 rounded-md bg-[#252525] hover:bg-[#2e2e2e] text-xs font-medium border border-[#333] disabled:opacity-50"
+            >
+              {isCopying ? <Loader2 className="size-3.5 animate-spin" /> : "Copy"}
+            </Button>
+            <Button 
+              variant="default"
+              onClick={handleSave} 
+              disabled={!imageLoaded || isSaving || isCopying}
+              className="flex-1 h-8 rounded-md bg-white text-black hover:bg-white/90 text-xs font-medium disabled:opacity-50"
+            >
+              {isSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Export"}
+            </Button>
+          </div>
+
+          <div className="p-4 space-y-6 pb-10">
+            {/* Image Transform */}
+            <div className="space-y-2.5">
+              <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Image</h3>
+              <ImagePositionControl
+                imageScale={settings.imageScale ?? 1.0}
+                imageOffsetX={settings.imageOffsetX ?? 0}
+                imageOffsetY={settings.imageOffsetY ?? 0}
+                onScaleChangeTransient={actions.setImageScaleTransient}
+                onScaleChange={actions.setImageScale}
+                onOffsetTransient={actions.setImageOffsetTransient}
+                onOffsetCommit={actions.setImageOffset}
+                onReset={actions.resetImageTransform}
+              />
+            </div>
+
+            {/* Properties */}
+            <div className="space-y-2.5">
+              <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Properties</h3>
+              {selectedAnnotation ? (
+                <PropertiesPanel annotation={selectedAnnotation} onUpdate={handleAnnotationUpdate} />
+              ) : (
+                <div className="text-xs text-muted-foreground text-center py-5 bg-[#202020] rounded-lg border border-[#2e2e2e]">
+                  Select an annotation to edit
                 </div>
               )}
-            </ShadowPresets>
+            </div>
+
+            {/* Shadow */}
+            <div className="space-y-2.5">
+              <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Shadow</h3>
+              <ShadowPresets
+                shadowPreset={settings.shadowPreset || "spread"}
+                opacity={settings.shadow.opacity}
+                showMockup={settings.showMockup !== false}
+                onPresetChange={actions.setShadowPreset}
+                onOpacityChangeTransient={actions.setShadowOpacityTransient}
+                onOpacityChange={actions.setShadowOpacity}
+                onToggleMockup={() => actions.setShowMockup(!(settings.showMockup !== false))}
+              >
+                {settings.shadowPreset !== "none" && (
+                  <div className="space-y-3 pt-1">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs text-muted-foreground font-medium">Blur</label>
+                        <span className="text-xs text-muted-foreground font-mono tabular-nums">{settings.shadow.blur}px</span>
+                      </div>
+                      <EffectsPanel
+                        blurAmount={settings.blurAmount}
+                        noiseAmount={settings.noiseAmount}
+                        paddingTop={settings.paddingTop}
+                        paddingBottom={settings.paddingBottom}
+                        paddingLeft={settings.paddingLeft}
+                        paddingRight={settings.paddingRight}
+                        shadow={settings.shadow}
+                        onBlurAmountChangeTransient={actions.setBlurAmountTransient}
+                        onNoiseChangeTransient={actions.setNoiseAmountTransient}
+                        onPaddingTopChangeTransient={actions.setPaddingTopTransient}
+                        onPaddingBottomChangeTransient={actions.setPaddingBottomTransient}
+                        onPaddingLeftChangeTransient={actions.setPaddingLeftTransient}
+                        onPaddingRightChangeTransient={actions.setPaddingRightTransient}
+                        onAllPaddingChangeTransient={actions.setAllPaddingTransient}
+                        onShadowBlurChangeTransient={actions.setShadowBlurTransient}
+                        onShadowOffsetXChangeTransient={actions.setShadowOffsetXTransient}
+                        onShadowOffsetYChangeTransient={actions.setShadowOffsetYTransient}
+                        onShadowOpacityChangeTransient={actions.setShadowOpacityTransient}
+                        onBlurAmountChange={actions.setBlurAmount}
+                        onNoiseChange={actions.setNoiseAmount}
+                        onPaddingTopChange={actions.setPaddingTop}
+                        onPaddingBottomChange={actions.setPaddingBottom}
+                        onPaddingLeftChange={actions.setPaddingLeft}
+                        onPaddingRightChange={actions.setPaddingRight}
+                        onAllPaddingChange={actions.setAllPadding}
+                        onShadowBlurChange={actions.setShadowBlur}
+                        onShadowOffsetXChange={actions.setShadowOffsetX}
+                        onShadowOffsetYChange={actions.setShadowOffsetY}
+                        onShadowOpacityChange={actions.setShadowOpacity}
+                        onSaveAsDefaults={actions.saveEffectSettingsAsDefaults}
+                        onResetPadding={handleResetPadding}
+                        shadowOnly
+                      />
+                    </div>
+                  </div>
+                )}
+              </ShadowPresets>
+            </div>
+
+            {/* Effects */}
+            <div className="space-y-2.5">
+              <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Effects</h3>
+              <EffectsPanel
+                blurAmount={settings.blurAmount}
+                noiseAmount={settings.noiseAmount}
+                paddingTop={settings.paddingTop}
+                paddingBottom={settings.paddingBottom}
+                paddingLeft={settings.paddingLeft}
+                paddingRight={settings.paddingRight}
+                shadow={settings.shadow}
+                onBlurAmountChangeTransient={actions.setBlurAmountTransient}
+                onNoiseChangeTransient={actions.setNoiseAmountTransient}
+                onPaddingTopChangeTransient={actions.setPaddingTopTransient}
+                onPaddingBottomChangeTransient={actions.setPaddingBottomTransient}
+                onPaddingLeftChangeTransient={actions.setPaddingLeftTransient}
+                onPaddingRightChangeTransient={actions.setPaddingRightTransient}
+                onAllPaddingChangeTransient={actions.setAllPaddingTransient}
+                onShadowBlurChangeTransient={actions.setShadowBlurTransient}
+                onShadowOffsetXChangeTransient={actions.setShadowOffsetXTransient}
+                onShadowOffsetYChangeTransient={actions.setShadowOffsetYTransient}
+                onShadowOpacityChangeTransient={actions.setShadowOpacityTransient}
+                onBlurAmountChange={actions.setBlurAmount}
+                onNoiseChange={actions.setNoiseAmount}
+                onPaddingTopChange={actions.setPaddingTop}
+                onPaddingBottomChange={actions.setPaddingBottom}
+                onPaddingLeftChange={actions.setPaddingLeft}
+                onPaddingRightChange={actions.setPaddingRight}
+                onAllPaddingChange={actions.setAllPadding}
+                onShadowBlurChange={actions.setShadowBlur}
+                onShadowOffsetXChange={actions.setShadowOffsetX}
+                onShadowOffsetYChange={actions.setShadowOffsetY}
+                onShadowOpacityChange={actions.setShadowOpacity}
+                onSaveAsDefaults={actions.saveEffectSettingsAsDefaults}
+                onResetPadding={handleResetPadding}
+                hideShadow
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Center Canvas Area */}
+        <div className="flex-1 flex flex-col relative overflow-hidden bg-[#111111]">
+          {/* Floating Top Toolbar */}
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 bg-[#141414]/90 backdrop-blur-xl p-1.5 rounded-full border border-[#2a2a2a] shadow-2xl">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleUndo}
+                    disabled={!canUndo}
+                    className="size-8 rounded-full text-muted-foreground hover:text-white disabled:opacity-30"
+                  >
+                    <Undo2 className="size-4" aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs bg-[#1a1a1a] border-[#2a2a2a]">Undo ⌘Z</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleRedo}
+                    disabled={!canRedo}
+                    className="size-8 rounded-full text-muted-foreground hover:text-white disabled:opacity-30"
+                  >
+                    <Redo2 className="size-4" aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs bg-[#1a1a1a] border-[#2a2a2a]">Redo ⌘⇧Z</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <div className="w-[1px] h-4 bg-[#333] mx-2" />
+
+            <AnnotationToolbar
+              selectedTool={selectedTool}
+              onToolSelect={setSelectedTool}
+              onDelete={selectedAnnotation ? handleDeleteSelected : undefined}
+            />
           </div>
 
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Effects</h3>
-            <EffectsPanel
-              blurAmount={settings.blurAmount}
-              noiseAmount={settings.noiseAmount}
-              paddingTop={settings.paddingTop}
-              paddingBottom={settings.paddingBottom}
-              paddingLeft={settings.paddingLeft}
-              paddingRight={settings.paddingRight}
-              shadow={settings.shadow}
-              onBlurAmountChangeTransient={actions.setBlurAmountTransient}
-              onNoiseChangeTransient={actions.setNoiseAmountTransient}
-              onPaddingTopChangeTransient={actions.setPaddingTopTransient}
-              onPaddingBottomChangeTransient={actions.setPaddingBottomTransient}
-              onPaddingLeftChangeTransient={actions.setPaddingLeftTransient}
-              onPaddingRightChangeTransient={actions.setPaddingRightTransient}
-              onAllPaddingChangeTransient={actions.setAllPaddingTransient}
-              onShadowBlurChangeTransient={actions.setShadowBlurTransient}
-              onShadowOffsetXChangeTransient={actions.setShadowOffsetXTransient}
-              onShadowOffsetYChangeTransient={actions.setShadowOffsetYTransient}
-              onShadowOpacityChangeTransient={actions.setShadowOpacityTransient}
-              onBlurAmountChange={actions.setBlurAmount}
-              onNoiseChange={actions.setNoiseAmount}
-              onPaddingTopChange={actions.setPaddingTop}
-              onPaddingBottomChange={actions.setPaddingBottom}
-              onPaddingLeftChange={actions.setPaddingLeft}
-              onPaddingRightChange={actions.setPaddingRight}
-              onAllPaddingChange={actions.setAllPadding}
-              onShadowBlurChange={actions.setShadowBlur}
-              onShadowOffsetXChange={actions.setShadowOffsetX}
-              onShadowOffsetYChange={actions.setShadowOffsetY}
-              onShadowOpacityChange={actions.setShadowOpacity}
-              onSaveAsDefaults={actions.saveEffectSettingsAsDefaults}
-              onResetPadding={handleResetPadding}
-              hideShadow
-            />
+          {/* Main Canvas */}
+          <div className="flex-1 flex items-center justify-center p-12 overflow-hidden min-w-0 min-h-0 relative">
+            <div className="w-full h-full flex items-center justify-center min-w-0 min-h-0 z-10">
+              {previewUrl ? (
+                <AnnotationCanvas
+                  annotations={annotations}
+                  selectedAnnotation={selectedAnnotation}
+                  selectedTool={selectedTool}
+                  previewUrl={previewUrl}
+                  showTransparencyGrid={settings.backgroundType === "transparent"}
+                  onAnnotationAdd={handleAnnotationAdd}
+                  onAnnotationUpdate={handleAnnotationUpdate}
+                  onAnnotationSelect={setSelectedAnnotation}
+                  onAnnotationDelete={handleAnnotationDelete}
+                />
+              ) : imageLoaded ? (
+                <div className="text-muted-foreground text-sm">Generating preview...</div>
+              ) : error ? (
+                <div className="text-center text-red-400 p-5">
+                  <p className="mb-1 text-sm font-medium">Could not load image</p>
+                  <small className="text-xs opacity-70">{error}</small>
+                </div>
+              ) : (
+                <div className="text-muted-foreground text-sm flex items-center gap-2">
+                  <Loader2 className="size-4 animate-spin" />
+                  Loading image...
+                </div>
+              )}
+              <canvas ref={canvasRef} style={{ display: "none" }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Right Sidebar — Redesigned High-Performance Tabbed Styling Panel */}
+        <div className="w-[320px] shrink-0 border-l border-[#252525] bg-[#1a1a1a] flex flex-col sidebar-scroll">
+          {/* Header & Tabs */}
+          <div className="p-3 border-b border-[#252525] sticky top-0 bg-[#1a1a1a]/95 backdrop-blur z-10 space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-semibold text-white tracking-tight flex items-center gap-1.5">
+                <div className="size-3.5 rounded-sm bg-gradient-to-br from-blue-500 to-purple-600" />
+                Appearance & Customization
+              </span>
+            </div>
+
+            {/* Segmented Tab Controls */}
+            <div className="grid grid-cols-4 p-1 bg-[#121212] rounded-lg border border-[#262626]">
+              <button
+                type="button"
+                onClick={() => setActiveTab("bg")}
+                className={`flex flex-col items-center justify-center py-1.5 rounded-md transition-all ${
+                  activeTab === "bg"
+                    ? "bg-[#282828] text-white shadow-sm font-medium"
+                    : "text-muted-foreground hover:text-white hover:bg-[#1e1e1e]"
+                }`}
+                title="Background"
+              >
+                <Palette className="size-3.5 mb-0.5" />
+                <span className="text-[10px]">Bg</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("wallpapers")}
+                className={`flex flex-col items-center justify-center py-1.5 rounded-md transition-all ${
+                  activeTab === "wallpapers"
+                    ? "bg-[#282828] text-white shadow-sm font-medium"
+                    : "text-muted-foreground hover:text-white hover:bg-[#1e1e1e]"
+                }`}
+                title="Media & Wallpapers"
+              >
+                <ImageIcon className="size-3.5 mb-0.5" />
+                <span className="text-[10px]">Media</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("frame")}
+                className={`flex flex-col items-center justify-center py-1.5 rounded-md transition-all ${
+                  activeTab === "frame"
+                    ? "bg-[#282828] text-white shadow-sm font-medium"
+                    : "text-muted-foreground hover:text-white hover:bg-[#1e1e1e]"
+                }`}
+                title="Style, Frame & Border"
+              >
+                <LayoutGrid className="size-3.5 mb-0.5" />
+                <span className="text-[10px]">Style</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("layout")}
+                className={`flex flex-col items-center justify-center py-1.5 rounded-md transition-all ${
+                  activeTab === "layout"
+                    ? "bg-[#282828] text-white shadow-sm font-medium"
+                    : "text-muted-foreground hover:text-white hover:bg-[#1e1e1e]"
+                }`}
+                title="3D Perspective Layout"
+              >
+                <Box className="size-3.5 mb-0.5" />
+                <span className="text-[10px]">Layout</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Tab Content */}
+          <div className="p-4 space-y-6 pb-10">
+            {activeTab === "bg" && (
+              <div className="space-y-4">
+                <BackgroundSelector
+                  backgroundType={settings.backgroundType as "transparent" | "white" | "black" | "gray" | "gradient" | "custom"}
+                  customColor={settings.customColor}
+                  selectedGradient={selectedGradientOption.id}
+                  onBackgroundTypeChange={actions.setBackgroundType}
+                  onCustomColorChange={actions.setCustomColor}
+                  onGradientSelect={actions.setGradient}
+                />
+              </div>
+            )}
+
+            {activeTab === "wallpapers" && (
+              <div className="space-y-4">
+                <AssetGrid
+                  categories={assetCategories}
+                  selectedImage={settings.selectedImageSrc}
+                  backgroundType={settings.backgroundType}
+                  onImageSelect={actions.handleImageSelect}
+                />
+              </div>
+            )}
+
+            {activeTab === "frame" && (
+              <div className="space-y-6">
+                <div className="space-y-2.5">
+                  <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Style</h3>
+                  <StyleSelector
+                    frameStyle={settings.frameStyle || "default"}
+                    framePadding={settings.framePadding ?? 0}
+                    frameOpacity={settings.frameOpacity ?? 100}
+                    onChange={actions.setFrameStyle}
+                    onFramePaddingChangeTransient={actions.setFramePaddingTransient}
+                    onFramePaddingChange={actions.setFramePadding}
+                    onFrameOpacityChangeTransient={actions.setFrameOpacityTransient}
+                    onFrameOpacityChange={actions.setFrameOpacity}
+                  />
+                </div>
+
+                <div className="space-y-2.5">
+                  <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Mockup Frame</h3>
+                  <MockupSelector
+                    windowFrame={settings.windowFrame || "none"}
+                    onChange={actions.setWindowFrame}
+                  />
+                </div>
+
+                <div className="space-y-2.5">
+                  <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Border</h3>
+                  <BorderPresets
+                    borderPreset={settings.borderPreset || "curved"}
+                    borderRadius={settings.borderRadius}
+                    onPresetChange={actions.setBorderPreset}
+                    onBorderRadiusChangeTransient={actions.setBorderRadiusTransient}
+                    onBorderRadiusChange={actions.setBorderRadius}
+                  />
+                </div>
+              </div>
+            )}
+
+            {activeTab === "layout" && (
+              <div className="space-y-3">
+                <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">3D Perspective Presets</h3>
+                <LayoutPresets
+                  layoutPreset={settings.layoutPreset || "flat"}
+                  onChange={actions.setLayoutPreset}
+                  previewUrl={previewUrl}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>
