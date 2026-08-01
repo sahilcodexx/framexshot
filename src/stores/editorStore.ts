@@ -3,7 +3,7 @@ import { subscribeWithSelector } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 import { Store } from "@tauri-apps/plugin-store";
 import { gradientOptions, type GradientOption } from "@/components/editor/BackgroundSelector";
-import { resolveBackgroundPath } from "@/lib/asset-registry";
+import { resolveBackgroundPath, toStorableValue } from "@/lib/asset-registry";
 import { Annotation } from "@/types/annotations";
 import {
   type FrameStyleId,
@@ -450,6 +450,7 @@ export const useEditorStore = create<EditorStore>()(
 
       setGradient: (gradient) => {
         get().updateSettings({
+          backgroundType: "gradient",
           gradientId: gradient.id,
           gradientSrc: gradient.src,
           gradientColors: gradient.colors,
@@ -628,6 +629,24 @@ export const useEditorStore = create<EditorStore>()(
         const state = get();
         try {
           const store = await Store.load("settings.json");
+
+          // Background settings
+          const { backgroundType, selectedImageSrc, customColor, gradientId } = state.settings;
+          await store.set("defaultBackgroundType", backgroundType);
+          if (backgroundType === "image") {
+            const storableImage = selectedImageSrc ? toStorableValue(selectedImageSrc) : null;
+            await store.set("defaultBackgroundImage", storableImage);
+          } else if (backgroundType === "gradient") {
+            const storableGradient = gradientId.replace("mesh-", "gradient-");
+            await store.set("defaultBackgroundImage", storableGradient);
+          } else if (backgroundType === "custom") {
+            await store.set("defaultCustomColor", customColor);
+            await store.set("defaultBackgroundImage", null);
+          } else {
+            await store.set("defaultBackgroundImage", null);
+          }
+
+          // Effect settings
           await store.set("defaultBlurAmount", state.settings.blurAmount);
           await store.set("defaultNoiseAmount", state.settings.noiseAmount);
           await store.set("defaultBorderRadius", state.settings.borderRadius);

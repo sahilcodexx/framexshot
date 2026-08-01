@@ -3,16 +3,10 @@ import type { AssetCategory } from "@/components/editor/AssetGrid";
 /**
  * Asset Registry
  * 
- * This module provides a centralized way to look up bundled assets by ID.
- * We store asset IDs in settings instead of runtime paths because:
- * - In development, Vite serves assets from /src/assets/...
- * - In production, assets are bundled with hashed names like /assets/asset-18-abc123.jpg
- * 
- * By storing IDs and looking up paths at runtime, we avoid path mismatches
- * between development and production builds.
+ * Centralized lookup for bundled assets by ID.
  */
 
-// Import all background images
+// Background images
 import bgImage13 from "@/assets/bg-images/asset-13.jpg";
 import bgImage18 from "@/assets/bg-images/asset-18.jpg";
 import bgImage19 from "@/assets/bg-images/asset-19.jpg";
@@ -23,6 +17,11 @@ import bgImage27 from "@/assets/bg-images/asset-27.jpeg";
 import bgImage28 from "@/assets/bg-images/asset-28.jpeg";
 import bgImage29 from "@/assets/bg-images/asset-29.jpeg";
 import bgImage30 from "@/assets/bg-images/asset-30.jpeg";
+
+// New background images from Downloads
+import bgTahoeDark from "@/assets/bg-images/tahoe-dark.jpg";
+import bgTahoeLight from "@/assets/bg-images/tahoe-light.jpg";
+import bgAbstractPhoto from "@/assets/bg-images/abstract-photo.avif";
 
 import macImage3 from "@/assets/mac/mac-asset-3.jpg";
 import macImage5 from "@/assets/mac/mac-asset-5.jpg";
@@ -50,10 +49,19 @@ import gradient14 from "@/assets/mesh/mesh14.webp";
 import gradient15 from "@/assets/mesh/mesh15.webp";
 import gradient16 from "@/assets/mesh/mesh16.webp";
 import gradient17 from "@/assets/mesh/mesh17.webp";
+import gradient18 from "@/assets/mesh/mesh18.jpg";
+import gradient19 from "@/assets/mesh/mesh19.jpg";
+import gradient20 from "@/assets/mesh/mesh20.jpg";
+import gradient21 from "@/assets/mesh/mesh21.jpg";
+import gradient22 from "@/assets/mesh/mesh22.jpg";
+import gradient23 from "@/assets/mesh/mesh23.jpg";
+import gradient24 from "@/assets/mesh/mesh24.jpg";
+import gradient25 from "@/assets/mesh/mesh25.jpg";
+import gradient26 from "@/assets/mesh/mesh26.png";
+import gradient27 from "@/assets/mesh/mesh27.jpg";
 
 /**
  * Map of asset IDs to their runtime-resolved paths
- * This ensures we always use the correct path regardless of dev/prod environment
  */
 export const assetRegistry: Record<string, string> = {
   // Background images
@@ -67,6 +75,9 @@ export const assetRegistry: Record<string, string> = {
   "bg-28": bgImage28,
   "bg-29": bgImage29,
   "bg-30": bgImage30,
+  "tahoe-dark": bgTahoeDark,
+  "tahoe-light": bgTahoeLight,
+  "abstract-photo": bgAbstractPhoto,
   
   // Mac assets
   "mac-3": macImage3,
@@ -95,6 +106,16 @@ export const assetRegistry: Record<string, string> = {
   "gradient-15": gradient15,
   "gradient-16": gradient16,
   "gradient-17": gradient17,
+  "gradient-18": gradient18,
+  "gradient-19": gradient19,
+  "gradient-20": gradient20,
+  "gradient-21": gradient21,
+  "gradient-22": gradient22,
+  "gradient-23": gradient23,
+  "gradient-24": gradient24,
+  "gradient-25": gradient25,
+  "gradient-26": gradient26,
+  "gradient-27": gradient27,
 };
 
 /** Default background asset ID */
@@ -110,72 +131,41 @@ export function getDefaultBackgroundPath(): string {
   return assetRegistry[DEFAULT_BACKGROUND_ID];
 }
 
-/**
- * Check if a string is an asset ID (exists in registry)
- */
+/** Check if a string is an asset ID */
 export function isAssetId(value: string): boolean {
   return value in assetRegistry;
 }
 
-/**
- * Check if a string is a data URL (uploaded image)
- */
+/** Check if a string is a data URL */
 export function isDataUrl(value: string): boolean {
   return value.startsWith("data:");
 }
 
-/**
- * Resolve a stored background value to an actual path
- * Handles:
- * - Asset IDs (e.g., "bg-18") -> looks up in registry
- * - Data URLs (uploaded images) -> returns as-is
- * - Legacy paths (e.g., "/src/assets/...") -> tries to match and migrate
- */
+/** Resolve a stored background value to an actual path */
 export function resolveBackgroundPath(storedValue: string | null): string {
   if (!storedValue) {
     return getDefaultBackgroundPath();
   }
   
-  // If it's an asset ID, look it up
   if (isAssetId(storedValue)) {
     return assetRegistry[storedValue];
   }
   
-  // If it's a data URL (uploaded image), use it directly
   if (isDataUrl(storedValue)) {
     return storedValue;
   }
-  
-  // Legacy path migration: try to extract asset ID from old paths
-  // Old paths look like: /src/assets/bg-images/asset-18.jpg or /assets/asset-18-hash.jpg
-  const legacyMatch = storedValue.match(/asset-(\d+)/);
-  if (legacyMatch) {
-    const assetId = `bg-${legacyMatch[1]}`;
-    if (isAssetId(assetId)) {
-      console.log(`Migrating legacy path to asset ID: ${storedValue} -> ${assetId}`);
-      return assetRegistry[assetId];
+
+  // Also check if path matches any registered asset path directly
+  for (const [, assetPath] of Object.entries(assetRegistry)) {
+    if (assetPath === storedValue) {
+      return storedValue;
     }
   }
-  
-  // Check for mac assets
-  const macMatch = storedValue.match(/mac-asset-(\d+)/);
-  if (macMatch) {
-    const assetId = `mac-${macMatch[1]}`;
-    if (isAssetId(assetId)) {
-      console.log(`Migrating legacy path to asset ID: ${storedValue} -> ${assetId}`);
-      return assetRegistry[assetId];
-    }
-  }
-  
-  // Fallback to default
-  console.warn(`Unable to resolve background path: ${storedValue}, using default`);
-  return getDefaultBackgroundPath();
+
+  return storedValue;
 }
 
-/**
- * Find the asset ID for a given path (reverse lookup)
- * Used when saving to convert runtime paths back to IDs
- */
+/** Find the asset ID for a given path */
 export function getAssetIdFromPath(path: string): string | null {
   for (const [id, assetPath] of Object.entries(assetRegistry)) {
     if (assetPath === path) {
@@ -185,72 +175,39 @@ export function getAssetIdFromPath(path: string): string | null {
   return null;
 }
 
-/**
- * Convert a path to a storable value
- * - If it's a registry asset, returns the asset ID
- * - If it's a data URL, returns it as-is
- * - Otherwise returns null (shouldn't be stored)
- */
 export function toStorableValue(path: string): string | null {
-  // Check if it's a registered asset
   const assetId = getAssetIdFromPath(path);
-  if (assetId) {
-    return assetId;
-  }
-  
-  // Data URLs can be stored directly
-  if (isDataUrl(path)) {
-    return path;
-  }
-  
+  if (assetId) return assetId;
+  if (isDataUrl(path)) return path;
   return null;
 }
 
-/**
- * Migrate a legacy stored value to the new format
- * Returns the migrated value (asset ID) or the original if it's already valid
- */
+/** Migrate a legacy stored value to the new format */
 export function migrateStoredValue(storedValue: string): string | null {
-  // Already a valid asset ID
-  if (isAssetId(storedValue)) {
-    return storedValue;
-  }
-  
-  // Data URLs are valid
-  if (isDataUrl(storedValue)) {
-    return storedValue;
-  }
-  
-  // Try to extract asset ID from legacy paths like:
-  // /src/assets/bg-images/asset-18.jpg
-  // /assets/asset-18-hash.jpg
+  if (isAssetId(storedValue)) return storedValue;
+  if (isDataUrl(storedValue)) return storedValue;
+
+  // Legacy bg paths like /src/assets/bg-images/asset-18.jpg
   const legacyBgMatch = storedValue.match(/asset-(\d+)/);
   if (legacyBgMatch) {
     const assetId = `bg-${legacyBgMatch[1]}`;
-    if (isAssetId(assetId)) {
-      return assetId;
-    }
+    if (isAssetId(assetId)) return assetId;
   }
-  
-  // Check for mac assets: mac-asset-5.jpg
+
+  // Legacy mac paths like /src/assets/mac/mac-asset-5.jpg
   const macMatch = storedValue.match(/mac-asset-(\d+)/);
   if (macMatch) {
     const assetId = `mac-${macMatch[1]}`;
-    if (isAssetId(assetId)) {
-      return assetId;
-    }
+    if (isAssetId(assetId)) return assetId;
   }
-  
-  // Check for mesh/gradient: mesh1.webp
+
+  // Legacy mesh paths like /src/assets/mesh/mesh1.webp
   const meshMatch = storedValue.match(/mesh(\d+)/);
   if (meshMatch) {
     const assetId = `gradient-${meshMatch[1]}`;
-    if (isAssetId(assetId)) {
-      return assetId;
-    }
+    if (isAssetId(assetId)) return assetId;
   }
-  
-  // Unknown format - return default
+
   console.warn(`Unable to migrate stored value: ${storedValue}`);
   return DEFAULT_BACKGROUND_ID;
 }
@@ -260,6 +217,9 @@ export function getAssetCategories(): AssetCategory[] {
     {
       name: "Wallpapers",
       assets: [
+        { id: "tahoe-dark", src: assetRegistry["tahoe-dark"], name: "Tahoe Dark" },
+        { id: "tahoe-light", src: assetRegistry["tahoe-light"], name: "Tahoe Light" },
+        { id: "abstract-photo", src: assetRegistry["abstract-photo"], name: "Abstract" },
         { id: "bg-13", src: assetRegistry["bg-13"], name: "Background 13" },
         { id: "bg-18", src: assetRegistry["bg-18"], name: "Background 18" },
         { id: "bg-19", src: assetRegistry["bg-19"], name: "Background 19" },
