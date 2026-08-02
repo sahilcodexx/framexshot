@@ -175,11 +175,12 @@ export function getAssetIdFromPath(path: string): string | null {
   return null;
 }
 
-export function toStorableValue(path: string): string | null {
+export function toStorableValue(path: string | null): string | null {
+  if (!path) return null;
+  if (isAssetId(path)) return path;
   const assetId = getAssetIdFromPath(path);
   if (assetId) return assetId;
-  if (isDataUrl(path)) return path;
-  return null;
+  return path;
 }
 
 /** Migrate a legacy stored value to the new format */
@@ -220,6 +221,16 @@ export function getAssetCategories(): AssetCategory[] {
         { id: "tahoe-dark", src: assetRegistry["tahoe-dark"], name: "Tahoe Dark" },
         { id: "tahoe-light", src: assetRegistry["tahoe-light"], name: "Tahoe Light" },
         { id: "abstract-photo", src: assetRegistry["abstract-photo"], name: "Abstract" },
+        { id: "gradient-18", src: assetRegistry["gradient-18"], name: "Wallpaper 18" },
+        { id: "gradient-19", src: assetRegistry["gradient-19"], name: "Wallpaper 19" },
+        { id: "gradient-20", src: assetRegistry["gradient-20"], name: "Wallpaper 20" },
+        { id: "gradient-21", src: assetRegistry["gradient-21"], name: "Wallpaper 21" },
+        { id: "gradient-22", src: assetRegistry["gradient-22"], name: "Wallpaper 22" },
+        { id: "gradient-23", src: assetRegistry["gradient-23"], name: "Wallpaper 23" },
+        { id: "gradient-24", src: assetRegistry["gradient-24"], name: "Wallpaper 24" },
+        { id: "gradient-25", src: assetRegistry["gradient-25"], name: "Wallpaper 25" },
+        { id: "gradient-26", src: assetRegistry["gradient-26"], name: "Wallpaper 26" },
+        { id: "gradient-27", src: assetRegistry["gradient-27"], name: "Wallpaper 27" },
         { id: "bg-13", src: assetRegistry["bg-13"], name: "Background 13" },
         { id: "bg-18", src: assetRegistry["bg-18"], name: "Background 18" },
         { id: "bg-19", src: assetRegistry["bg-19"], name: "Background 19" },
