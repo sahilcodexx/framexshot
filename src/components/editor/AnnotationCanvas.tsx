@@ -606,61 +606,65 @@ export const AnnotationCanvas = memo(function AnnotationCanvas({
     const ds = dragStateRef.current;
     const currentAnnotations = annotationsRef.current;
 
-    if (selectedTool === "select" || !selectedTool) {
-      if (selectedAnnotation && selectedAnnotation.type !== "blur") {
-        const handle = getHandleAtPoint(point, selectedAnnotation);
+    // Check if clicking resize handles of currently selected annotation
+    if (selectedAnnotation && selectedAnnotation.type !== "blur") {
+      const handle = getHandleAtPoint(point, selectedAnnotation);
+      if (handle) {
+        ds.resizingAnnotationId = selectedAnnotation.id;
+        ds.resizeHandle = handle;
+        ds.resizeStartPoint = point;
+        ds.resizeStartAnnotation = { ...selectedAnnotation };
+        return;
+      }
+    }
+
+    // Check if clicking any resize handle
+    let clickedAnnotation: Annotation | null = null;
+    let clickedHandle: string | null = null;
+    
+    for (let i = currentAnnotations.length - 1; i >= 0; i--) {
+      const ann = currentAnnotations[i];
+      if (ann.type !== "blur") {
+        const handle = getHandleAtPoint(point, ann);
         if (handle) {
-          ds.resizingAnnotationId = selectedAnnotation.id;
-          ds.resizeHandle = handle;
-          ds.resizeStartPoint = point;
-          ds.resizeStartAnnotation = { ...selectedAnnotation };
-          return;
+          clickedAnnotation = ann;
+          clickedHandle = handle;
+          break;
         }
       }
-
-      let clickedAnnotation = null;
-      let clickedHandle = null;
-      
+    }
+    
+    // Check if clicking inside any existing annotation
+    if (!clickedAnnotation) {
       for (let i = currentAnnotations.length - 1; i >= 0; i--) {
         const ann = currentAnnotations[i];
-        if (ann.type !== "blur") {
-          const handle = getHandleAtPoint(point, ann);
-          if (handle) {
-            clickedAnnotation = ann;
-            clickedHandle = handle;
-            break;
-          }
+        if (isPointInAnnotation(point, ann)) {
+          clickedAnnotation = ann;
+          break;
         }
       }
-      
-      if (!clickedAnnotation) {
-        for (let i = currentAnnotations.length - 1; i >= 0; i--) {
-          const ann = currentAnnotations[i];
-          if (isPointInAnnotation(point, ann)) {
-            clickedAnnotation = ann;
-            break;
-          }
-        }
-      }
-      
-      if (clickedAnnotation) {
-        onAnnotationSelect(clickedAnnotation);
-        if (clickedHandle && clickedAnnotation.type !== "blur") {
-          ds.resizingAnnotationId = clickedAnnotation.id;
-          ds.resizeHandle = clickedHandle;
-          ds.resizeStartPoint = point;
-          ds.resizeStartAnnotation = { ...clickedAnnotation };
-        } else {
-          ds.draggingAnnotationId = clickedAnnotation.id;
-          ds.dragOffset = {
-            x: point.x - clickedAnnotation.x,
-            y: point.y - clickedAnnotation.y,
-          };
-          ds.dragStartAnnotation = { ...clickedAnnotation };
-        }
+    }
+
+    if (clickedAnnotation) {
+      onAnnotationSelect(clickedAnnotation);
+      if (clickedHandle && clickedAnnotation.type !== "blur") {
+        ds.resizingAnnotationId = clickedAnnotation.id;
+        ds.resizeHandle = clickedHandle;
+        ds.resizeStartPoint = point;
+        ds.resizeStartAnnotation = { ...clickedAnnotation };
       } else {
-        onAnnotationSelect(null);
+        ds.draggingAnnotationId = clickedAnnotation.id;
+        ds.dragOffset = {
+          x: point.x - clickedAnnotation.x,
+          y: point.y - clickedAnnotation.y,
+        };
+        ds.dragStartAnnotation = { ...clickedAnnotation };
       }
+      return;
+    }
+
+    if (selectedTool === "select" || !selectedTool) {
+      onAnnotationSelect(null);
     } else {
       ds.isDrawing = true;
       ds.startPoint = point;
@@ -848,6 +852,7 @@ export const AnnotationCanvas = memo(function AnnotationCanvas({
           const idx = currentAnnotations.indexOf(annotation);
           if (idx !== -1) {
             currentAnnotations[idx] = updated;
+            onAnnotationUpdate(updated);
             redraw();
           }
         }
@@ -859,21 +864,27 @@ export const AnnotationCanvas = memo(function AnnotationCanvas({
       
       rafRef.current = requestAnimationFrame(() => {
         const annotation = currentAnnotations.find((ann) => ann.id === ds.draggingAnnotationId);
-        if (annotation && dragOffset) {
-          const dx = point.x - dragOffset.x - annotation.x;
-          const dy = point.y - dragOffset.y - annotation.y;
+        if (annotation && dragOffset && ds.dragStartAnnotation) {
+          const startAnn = ds.dragStartAnnotation;
+          const newX = point.x - dragOffset.x;
+          const newY = point.y - dragOffset.y;
+          const dx = newX - startAnn.x;
+          const dy = newY - startAnn.y;
           const updated = {
             ...annotation,
-            x: point.x - dragOffset.x,
-            y: point.y - dragOffset.y,
+            x: newX,
+            y: newY,
           };
           if (annotation.type === "line" || annotation.type === "arrow") {
-            (updated as typeof annotation & { endX: number; endY: number }).endX = annotation.endX + dx;
-            (updated as typeof annotation & { endX: number; endY: number }).endY = annotation.endY + dy;
+            if ("endX" in startAnn && "endY" in startAnn) {
+              (updated as typeof annotation & { endX: number; endY: number }).endX = (startAnn as typeof annotation & { endX: number; endY: number }).endX + dx;
+              (updated as typeof annotation & { endX: number; endY: number }).endY = (startAnn as typeof annotation & { endX: number; endY: number }).endY + dy;
+            }
           }
           const idx = currentAnnotations.indexOf(annotation);
           if (idx !== -1) {
             currentAnnotations[idx] = updated as Annotation;
+            onAnnotationUpdate(updated as Annotation);
             redraw();
           }
         }
