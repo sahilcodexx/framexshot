@@ -73,38 +73,16 @@ const ThumbnailButton = memo(function ThumbnailButton({
 });
 
 export const AssetGrid = memo(function AssetGrid({ categories, selectedImage, backgroundType, onImageSelect }: AssetGridProps) {
-  const [activeCategory, setActiveCategory] = useState(categories[0]?.name || "");
-
-  const currentCategory = categories.find((cat) => cat.name === activeCategory);
+  const allAssets = categories.flatMap((cat) => cat.assets);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-foreground font-mono text-balance">Wallpapers</h3>
       </div>
-      
-      {categories.length > 1 && (
-        <div className="flex p-1 bg-secondary/50 rounded-lg border border-border/50">
-          {categories.map((category) => (
-            <button
-              key={category.name}
-              onClick={() => setActiveCategory(category.name)}
-              aria-label={`Select ${category.name} category`}
-              className={cn(
-                "flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
-                activeCategory === category.name
-                  ? "bg-muted text-white shadow-sm"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-              )}
-            >
-              {category.name === "Wallpapers" ? "Wallpapers" : category.name === "Mac Assets" ? "Mac" : category.name}
-            </button>
-          ))}
-        </div>
-      )}
 
-      <div className="grid grid-cols-4 gap-2 max-h-[400px] overflow-y-auto pr-4 pb-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-muted [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent">
-        {currentCategory?.assets.map((asset) => (
+      <div className="grid grid-cols-4 gap-2 pb-2">
+        {allAssets.map((asset) => (
           <ThumbnailButton
             key={asset.id}
             asset={asset}
