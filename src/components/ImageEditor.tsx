@@ -667,61 +667,61 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
             </div>
 
             {/* Segmented Tab Controls */}
-            <div className="grid grid-cols-4 p-1 bg-[#121212] rounded-lg border border-[#262626]">
+            <div className="grid grid-cols-4 p-1 bg-[#141414] rounded-xl border border-[#262626]">
               <button
                 type="button"
                 onClick={() => setActiveTab("bg")}
-                className={`flex flex-col items-center justify-center py-1.5 rounded-md transition-all ${
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs transition-all duration-150 ${
                   activeTab === "bg"
-                    ? "bg-[#282828] text-white shadow-sm font-medium"
-                    : "text-muted-foreground hover:text-white hover:bg-[#1e1e1e]"
+                    ? "bg-[#262626] text-white shadow-sm font-medium border border-white/10"
+                    : "text-muted-foreground hover:text-white hover:bg-[#1c1c1c]"
                 }`}
                 title="Background"
               >
-                <Palette className="size-3.5 mb-0.5" />
-                <span className="text-[10px]">Bg</span>
+                <Palette className="size-3.5 shrink-0" />
+                <span>Bg</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveTab("wallpapers")}
-                className={`flex flex-col items-center justify-center py-1.5 rounded-md transition-all ${
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs transition-all duration-150 ${
                   activeTab === "wallpapers"
-                    ? "bg-[#282828] text-white shadow-sm font-medium"
-                    : "text-muted-foreground hover:text-white hover:bg-[#1e1e1e]"
+                    ? "bg-[#262626] text-white shadow-sm font-medium border border-white/10"
+                    : "text-muted-foreground hover:text-white hover:bg-[#1c1c1c]"
                 }`}
                 title="Media & Wallpapers"
               >
-                <ImageIcon className="size-3.5 mb-0.5" />
-                <span className="text-[10px]">Media</span>
+                <ImageIcon className="size-3.5 shrink-0" />
+                <span>Media</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveTab("frame")}
-                className={`flex flex-col items-center justify-center py-1.5 rounded-md transition-all ${
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs transition-all duration-150 ${
                   activeTab === "frame"
-                    ? "bg-[#282828] text-white shadow-sm font-medium"
-                    : "text-muted-foreground hover:text-white hover:bg-[#1e1e1e]"
+                    ? "bg-[#262626] text-white shadow-sm font-medium border border-white/10"
+                    : "text-muted-foreground hover:text-white hover:bg-[#1c1c1c]"
                 }`}
                 title="Style, Frame & Border"
               >
-                <LayoutGrid className="size-3.5 mb-0.5" />
-                <span className="text-[10px]">Style</span>
+                <LayoutGrid className="size-3.5 shrink-0" />
+                <span>Style</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveTab("layout")}
-                className={`flex flex-col items-center justify-center py-1.5 rounded-md transition-all ${
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs transition-all duration-150 ${
                   activeTab === "layout"
-                    ? "bg-[#282828] text-white shadow-sm font-medium"
-                    : "text-muted-foreground hover:text-white hover:bg-[#1e1e1e]"
+                    ? "bg-[#262626] text-white shadow-sm font-medium border border-white/10"
+                    : "text-muted-foreground hover:text-white hover:bg-[#1c1c1c]"
                 }`}
-                title="3D Perspective Layout"
+                title="Layout & Presets"
               >
-                <Box className="size-3.5 mb-0.5" />
-                <span className="text-[10px]">Layout</span>
+                <Box className="size-3.5 shrink-0" />
+                <span>Layout</span>
               </button>
             </div>
           </div>
