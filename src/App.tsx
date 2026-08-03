@@ -1,6 +1,4 @@
 import { editorActions } from "@/stores/editorStore";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { isAssetId, isDataUrl, migrateStoredValue } from "@/lib/asset-registry";
 import { processScreenshotWithDefaultBackground } from "@/lib/auto-process";
@@ -15,7 +13,7 @@ import {
 } from "@tauri-apps/api/window";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { Store } from "@tauri-apps/plugin-store";
-import { AppWindowMac, Crop, Monitor, ScanText } from "lucide-react";
+import { AppWindowMac, Crop, Folder, Github, Globe, Monitor, ScanText, Twitter } from "lucide-react";
 import { toast } from "sonner";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardShortcut } from "./components/preferences/KeyboardShortcutManager";
@@ -679,171 +677,226 @@ function App() {
       </div>
 
       {/* Main page */}
-      <div className={mode !== "editing" && !showOnboarding && mode !== "preferences" ? "flex-1 overflow-auto" : "hidden"}>
-        <main className="flex flex-col items-center justify-center p-8 bg-canvas text-foreground">
-          <div className="w-full max-w-lg space-y-8">
-          <div className="relative text-center space-y-3">
-            <div className="absolute top-0 right-0">
-              <SettingsIcon onClick={() => setMode("preferences")} />
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <h1 className="text-5xl font-medium leading-[0.95] tracking-[-0.04em] text-foreground text-balance">FrameXShot</h1>
-              <span className="text-xs font-medium tracking-[-0.01em] text-muted-foreground">
-                v{__APP_VERSION__}
-              </span>
-              <p className="text-muted-foreground text-sm text-pretty max-w-sm">Capture, edit, and enhance your screenshots with professional quality.</p>
-            </div>
-          </div>
-
-          <Card className="bg-card border-border">
-            <CardContent className="p-5 space-y-5">
-              <div className="grid grid-cols-2 gap-2.5">
-                <Button
-                  onClick={() => handleCapture("region")}
-                  disabled={isCapturing}
-                  variant="default"
-                  size="lg"
-                  className="h-11 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Crop className="size-4" aria-hidden="true" />
-                  Region
-                </Button>
-                <Button
-                  onClick={() => handleCapture("ocr")}
-                  disabled={isCapturing}
-                  variant="secondary"
-                  size="lg"
-                  className="h-11 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <ScanText className="size-4" aria-hidden="true" />
-                  OCR
-                </Button>
-                <Button
-                  onClick={() => handleCapture("fullscreen")}
-                  disabled={isCapturing}
-                  variant="secondary"
-                  size="lg"
-                  className="h-11 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Monitor className="size-4" aria-hidden="true" />
-                  Screen
-                </Button>
-                <Button
-                  onClick={() => handleCapture("window")}
-                  disabled={isCapturing}
-                  variant="secondary"
-                  size="lg"
-                  className="h-11 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <AppWindowMac className="size-4" aria-hidden="true" />
-                  Window
-                </Button>
+      <div className={mode !== "editing" && !showOnboarding && mode !== "preferences" ? "flex-1 overflow-auto bg-canvas" : "hidden"}>
+        <main className="flex flex-col items-center justify-center min-h-[calc(100vh-38px)] p-6 text-foreground">
+          <div className="w-full max-w-xl space-y-6">
+            
+            {/* Minimal Framer Header Bar */}
+            <div className="flex items-center justify-between border-b border-border pb-4">
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-xl font-medium tracking-[-0.03em] leading-none text-foreground">
+                  FrameXShot
+                </h1>
+                <span className="text-[11px] font-medium text-muted-foreground tracking-tight">
+                  v{__APP_VERSION__}
+                </span>
               </div>
 
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <label htmlFor="auto-apply-toggle" className="text-sm font-medium text-foreground cursor-pointer block">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5 pr-3 border-r border-border">
+                  <label htmlFor="auto-apply-toggle" className="text-xs text-muted-foreground font-medium cursor-pointer select-none">
                     Auto-apply background
                   </label>
-                  <p className="text-xs text-muted-foreground">Apply default background and save instantly</p>
+                  <Switch
+                    id="auto-apply-toggle"
+                    checked={autoApplyBackground}
+                    onCheckedChange={handleAutoApplyToggle}
+                  />
                 </div>
-                <Switch
-                  id="auto-apply-toggle"
-                  checked={autoApplyBackground}
-                  onCheckedChange={handleAutoApplyToggle}
-                />
+                <SettingsIcon onClick={() => setMode("preferences")} />
+              </div>
+            </div>
+
+            {/* Main 4-Column Action Cards */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between px-0.5">
+                <span className="text-[11px] font-medium tracking-[-0.01em] text-muted-foreground uppercase">
+                  Capture Mode
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-2.5">
+                <button
+                  onClick={() => handleCapture("region")}
+                  disabled={isCapturing}
+                  className="flex flex-col items-center justify-center p-3.5 gap-2 rounded-xl bg-card border border-border hover:bg-secondary hover:border-[#333333] active:scale-[0.98] transition-all group disabled:opacity-50 cursor-pointer"
+                >
+                  <div className="p-2 rounded-lg bg-secondary group-hover:bg-[#262626] transition-colors">
+                    <Crop className="size-4 text-foreground" aria-hidden="true" />
+                  </div>
+                  <div className="flex flex-col items-center gap-0.5 text-center">
+                    <span className="text-xs font-medium text-foreground tracking-[-0.01em]">Region</span>
+                    <span className="text-[10px] font-mono text-muted-foreground">{getShortcutDisplay("region")}</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleCapture("ocr")}
+                  disabled={isCapturing}
+                  className="flex flex-col items-center justify-center p-3.5 gap-2 rounded-xl bg-card border border-border hover:bg-secondary hover:border-[#333333] active:scale-[0.98] transition-all group disabled:opacity-50 cursor-pointer"
+                >
+                  <div className="p-2 rounded-lg bg-secondary group-hover:bg-[#262626] transition-colors">
+                    <ScanText className="size-4 text-foreground" aria-hidden="true" />
+                  </div>
+                  <div className="flex flex-col items-center gap-0.5 text-center">
+                    <span className="text-xs font-medium text-foreground tracking-[-0.01em]">OCR Text</span>
+                    <span className="text-[10px] font-mono text-muted-foreground">{getShortcutDisplay("ocr")}</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleCapture("fullscreen")}
+                  disabled={isCapturing}
+                  className="flex flex-col items-center justify-center p-3.5 gap-2 rounded-xl bg-card border border-border hover:bg-secondary hover:border-[#333333] active:scale-[0.98] transition-all group disabled:opacity-50 cursor-pointer"
+                >
+                  <div className="p-2 rounded-lg bg-secondary group-hover:bg-[#262626] transition-colors">
+                    <Monitor className="size-4 text-foreground" aria-hidden="true" />
+                  </div>
+                  <div className="flex flex-col items-center gap-0.5 text-center">
+                    <span className="text-xs font-medium text-foreground tracking-[-0.01em]">Screen</span>
+                    <span className="text-[10px] font-mono text-muted-foreground">{getShortcutDisplay("fullscreen")}</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleCapture("window")}
+                  disabled={isCapturing}
+                  className="flex flex-col items-center justify-center p-3.5 gap-2 rounded-xl bg-card border border-border hover:bg-secondary hover:border-[#333333] active:scale-[0.98] transition-all group disabled:opacity-50 cursor-pointer"
+                >
+                  <div className="p-2 rounded-lg bg-secondary group-hover:bg-[#262626] transition-colors">
+                    <AppWindowMac className="size-4 text-foreground" aria-hidden="true" />
+                  </div>
+                  <div className="flex flex-col items-center gap-0.5 text-center">
+                    <span className="text-xs font-medium text-foreground tracking-[-0.01em]">Window</span>
+                    <span className="text-[10px] font-mono text-muted-foreground">{getShortcutDisplay("window")}</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {isCapturing && (
+              <div className="flex items-center justify-center gap-2 py-1.5 text-accent text-xs font-medium">
+                <svg className="animate-spin size-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Waiting for selection...
+              </div>
+            )}
+
+            {error && (
+              <div className="p-3.5 bg-[#1c0c0c] border border-[#3a1a1a] rounded-xl space-y-1">
+                <div className="font-medium text-red-400 text-xs">Error</div>
+                <div className="text-red-300/80 text-xs leading-relaxed text-pretty">{error}</div>
+              </div>
+            )}
+
+            {/* Shortcuts Reference Panel */}
+            <div className="space-y-2.5 pt-2 border-t border-border">
+              <div className="flex items-center justify-between px-0.5">
+                <span className="text-[11px] font-medium tracking-[-0.01em] text-muted-foreground uppercase">
+                  Keyboard Shortcuts
+                </span>
+                <span className="text-[11px] text-muted-foreground">Global</span>
               </div>
 
-              {isCapturing && (
-                <div className="flex items-center justify-center gap-2 text-muted-foreground text-sm">
-                  <svg className="animate-spin size-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Waiting for selection...
-                </div>
-              )}
-
-              {error && (
-                <div className="p-4 bg-[#1c0c0c] border border-[#3a1a1a] rounded-xl">
-                  <div className="font-medium text-red-400 mb-1">Error</div>
-                  <div className="text-red-300/80 text-sm text-pretty">{error}</div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card border-border">
-            <CardContent className="p-5 space-y-4">
-              <h3 className="font-medium text-foreground text-sm tracking-[-0.01em]">Keyboard Shortcuts</h3>
-              
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground tracking-[-0.01em]">Capture</p>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+              <div className="p-4 rounded-xl bg-card border border-border space-y-3">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Region</span>
-                    <kbd className="px-2 py-1 bg-secondary border border-border rounded-md text-foreground font-mono text-xs tabular-nums">
-                      {getShortcutDisplay("region")}
+                    <span className="text-muted-foreground">Save Image</span>
+                    <kbd className="px-2 py-0.5 bg-secondary border border-border rounded text-foreground font-mono text-[11px] tabular-nums">
+                      Ctrl+S
                     </kbd>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">OCR</span>
-                    <kbd className="px-2 py-1 bg-secondary border border-border rounded-md text-foreground font-mono text-xs tabular-nums">
-                      {getShortcutDisplay("ocr")}
+                    <span className="text-muted-foreground">Copy Image</span>
+                    <kbd className="px-2 py-0.5 bg-secondary border border-border rounded text-foreground font-mono text-[11px] tabular-nums">
+                      Ctrl+Shift+C
                     </kbd>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Screen</span>
-                    <kbd className="px-2 py-1 bg-secondary border border-border rounded-md text-foreground font-mono text-xs tabular-nums">
-                      {getShortcutDisplay("fullscreen")}
-                    </kbd>
+                    <span className="text-muted-foreground">Undo / Redo</span>
+                    <div className="flex items-center gap-1">
+                      <kbd className="px-1.5 py-0.5 bg-secondary border border-border rounded text-foreground font-mono text-[11px] tabular-nums">Ctrl+Z</kbd>
+                      <span className="text-muted-foreground">/</span>
+                      <kbd className="px-1.5 py-0.5 bg-secondary border border-border rounded text-foreground font-mono text-[11px] tabular-nums">Ctrl+Shift+Z</kbd>
+                    </div>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Window</span>
-                    <kbd className="px-2 py-1 bg-secondary border border-border rounded-md text-foreground font-mono text-xs tabular-nums">
-                      {getShortcutDisplay("window")}
+                    <span className="text-muted-foreground">Dismiss / Close</span>
+                    <kbd className="px-2 py-0.5 bg-secondary border border-border rounded text-foreground font-mono text-[11px] tabular-nums">
+                      Esc
                     </kbd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Cancel</span>
-                    <kbd className="px-2 py-1 bg-secondary border border-border rounded-md text-foreground font-mono text-xs tabular-nums">Esc</kbd>
                   </div>
                 </div>
               </div>
+            </div>
 
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground tracking-[-0.01em]">Editor</p>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Save</span>
-                    <kbd className="px-2 py-1 bg-secondary border border-border rounded-md text-foreground font-mono text-xs tabular-nums">Ctrl+S</kbd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Copy</span>
-                    <kbd className="px-2 py-1 bg-secondary border border-border rounded-md text-foreground font-mono text-xs tabular-nums">Ctrl+Shift+C</kbd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Undo</span>
-                    <kbd className="px-2 py-1 bg-secondary border border-border rounded-md text-foreground font-mono text-xs tabular-nums">Ctrl+Z</kbd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Redo</span>
-                    <kbd className="px-2 py-1 bg-secondary border border-border rounded-md text-foreground font-mono text-xs tabular-nums">Ctrl+Shift+Z</kbd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Delete</span>
-                    <kbd className="px-2 py-1 bg-secondary border border-border rounded-md text-foreground font-mono text-xs tabular-nums">⌫</kbd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Close</span>
-                    <kbd className="px-2 py-1 bg-secondary border border-border rounded-md text-foreground font-mono text-xs tabular-nums">Esc</kbd>
-                  </div>
-                </div>
+            {/* Save Directory Info Panel */}
+            <div className="space-y-2 pt-2 border-t border-border">
+              <div className="flex items-center justify-between px-0.5">
+                <span className="text-[11px] font-medium tracking-[-0.01em] text-muted-foreground uppercase">
+                  Save Location
+                </span>
+                <button
+                  onClick={() => setMode("preferences")}
+                  className="text-[11px] text-accent hover:underline cursor-pointer"
+                >
+                  Change
+                </button>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      </main>
+
+              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-card border border-border">
+                <Folder className="size-4 text-muted-foreground shrink-0" />
+                <span className="text-xs font-mono text-foreground/90 truncate flex-1">
+                  {saveDir || "Desktop"}
+                </span>
+              </div>
+            </div>
+
+            {/* About & Developer Links */}
+            <div className="flex flex-col items-center justify-between gap-3 pt-3 border-t border-border/80 text-xs text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <span>Created with</span>
+                <span className="text-red-400">♥</span>
+                <span>by</span>
+                <span className="font-medium text-foreground">Sahil</span>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <a
+                  href="https://x.com/sahilcodex"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 hover:text-foreground transition-colors"
+                >
+                  <Twitter className="size-3.5 text-accent" />
+                  <span>@sahilcodex</span>
+                </a>
+
+                <a
+                  href="https://github.com/sahilcodexx"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 hover:text-foreground transition-colors"
+                >
+                  <Github className="size-3.5 text-foreground/80" />
+                  <span>sahilcodexx</span>
+                </a>
+
+                <a
+                  href="https://sahilcodex.vercel.app"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 hover:text-foreground transition-colors"
+                >
+                  <Globe className="size-3.5 text-emerald-400" />
+                  <span>Portfolio</span>
+                </a>
+              </div>
+            </div>
+
+          </div>
+        </main>
       </div>
     </div>
   );
