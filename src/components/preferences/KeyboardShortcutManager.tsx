@@ -3,7 +3,6 @@ import { Store } from "@tauri-apps/plugin-store";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 export interface KeyboardShortcut {
@@ -231,82 +230,84 @@ export function KeyboardShortcutManager({ onShortcutsChange }: KeyboardShortcutM
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <label className="text-sm font-medium text-foreground">Keyboard Shortcuts</label>
+        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          Global Shortcuts
+        </span>
         <Button
           type="button"
-          variant="cta"
-          size="lg"
+          variant="secondary"
+          size="sm"
           onClick={handleAdd}
+          className="rounded-full text-xs h-7 px-3 font-medium"
         >
           <Plus className="size-3 mr-1" aria-hidden="true" />
-          Add
+          Add Shortcut
         </Button>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         {shortcuts.map((shortcut) => (
-          <Card key={shortcut.id} className="bg-secondary border-border">
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  {editingId === shortcut.id && isRecording ? (
-                    <div className="flex items-center gap-2">
-                      <button
-                        ref={recordingRef}
-                        className="flex-1 px-2 py-1 bg-card border-2 border-blue-500 rounded text-card-foreground text-sm focus:outline-none animate-pulse text-left"
-                        autoFocus
-                      >
-                        {recordedShortcut ? formatShortcut(recordedShortcut) : "Press shortcut..."}
-                      </button>
-                      <Button
-                        variant="cta"
-                        size="lg"
-                        onClick={handleCancelRecording}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-foreground flex-1">{shortcut.action}</span>
-                      <button
-                        onClick={() => handleStartRecording(shortcut)}
-                        className="px-2 py-1 bg-card border border-border rounded text-foreground font-mono text-xs tabular-nums hover:bg-secondary hover:border-ring transition-colors"
-                        title="Click to record new shortcut"
-                      >
-                        {formatShortcut(shortcut.shortcut)}
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleToggle(shortcut.id)}
-                    className={cn(
-                      "text-xs",
-                      shortcut.enabled
-                        ? "text-green-400 hover:text-green-300"
-                        : "text-foreground0 hover:text-muted-foreground"
-                    )}
-                  >
-                    {shortcut.enabled ? "Enabled" : "Disabled"}
-                  </Button>
-                  {shortcut.id.startsWith("custom-") && (
-                    <Button
-                      variant="cta"
-                      size="lg"
-                      onClick={() => handleDelete(shortcut.id)}
-                      aria-label="Delete shortcut"
+          <div key={shortcut.id} className="p-3 bg-secondary/80 border border-border/80 rounded-xl hover:border-border transition-colors">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                {editingId === shortcut.id && isRecording ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      ref={recordingRef}
+                      className="flex-1 px-3 py-1.5 bg-card border-2 border-accent rounded-lg text-foreground text-xs font-mono focus:outline-none animate-pulse text-left"
+                      autoFocus
                     >
-                      <Trash2 className="size-3" aria-hidden="true" />
+                      {recordedShortcut ? formatShortcut(recordedShortcut) : "Press shortcut keys..."}
+                    </button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCancelRecording}
+                      className="rounded-full text-xs h-7"
+                    >
+                      Cancel
                     </Button>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3 pr-2">
+                    <span className="text-xs font-medium text-foreground">{shortcut.action}</span>
+                    <button
+                      onClick={() => handleStartRecording(shortcut)}
+                      className="px-2.5 py-1 bg-card border border-border rounded-lg text-foreground font-mono text-xs tabular-nums hover:border-accent transition-colors"
+                      title="Click to record new shortcut"
+                    >
+                      {formatShortcut(shortcut.shortcut)}
+                    </button>
+                  </div>
+                )}
               </div>
-            </CardContent>
-          </Card>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleToggle(shortcut.id)}
+                  className={cn(
+                    "px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors border",
+                    shortcut.enabled
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
+                      : "bg-secondary text-muted-foreground border-border hover:text-foreground"
+                  )}
+                >
+                  {shortcut.enabled ? "Enabled" : "Disabled"}
+                </button>
+                {shortcut.id.startsWith("custom-") && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDelete(shortcut.id)}
+                    className="size-7 rounded-full text-red-400 hover:text-red-300 hover:bg-red-950/30"
+                    aria-label="Delete shortcut"
+                  >
+                    <Trash2 className="size-3.5" aria-hidden="true" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
         ))}
       </div>
     </div>
