@@ -638,9 +638,26 @@ export function usePreviewGenerator({
         if (annotations.length > 0) {
           const ctx = canvas.getContext("2d");
           if (ctx) {
-            annotations.forEach((annotation) => {
+            const MAX_PREVIEW_DIM = 1400;
+            const previewScale = Math.min(1.0, MAX_PREVIEW_DIM / Math.max(canvas.width, canvas.height));
+            const previewWidth = Math.round(canvas.width * previewScale);
+            const exportScaleFactor = canvas.width / previewWidth;
+
+            ctx.save();
+            if (exportScaleFactor !== 1) {
+              ctx.scale(exportScaleFactor, exportScaleFactor);
+            }
+
+            const nonText = annotations.filter((a) => a.type !== "text");
+            const textAnns = annotations.filter((a) => a.type === "text");
+            nonText.forEach((annotation) => {
               drawAnnotationOnCanvas(ctx, annotation);
             });
+            textAnns.forEach((annotation) => {
+              drawAnnotationOnCanvas(ctx, annotation);
+            });
+
+            ctx.restore();
           }
         }
 

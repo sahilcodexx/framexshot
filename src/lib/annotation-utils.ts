@@ -103,8 +103,12 @@ export function drawAnnotationOnCanvas(ctx: CanvasRenderingContext2D, annotation
     }
     case "text": {
       ctx.fillStyle = primaryRgba;
-      ctx.font = `${annotation.fontSize}px ${annotation.fontFamily}`;
-      ctx.fillText(annotation.text, annotation.x, annotation.y + annotation.fontSize);
+      ctx.font = `${annotation.fontSize}px ${annotation.fontFamily || "Arial"}`;
+      const lines = (annotation.text || "").split("\n");
+      const lineHeight = annotation.fontSize * 1.2;
+      lines.forEach((line, index) => {
+        ctx.fillText(line, annotation.x, annotation.y + annotation.fontSize + index * lineHeight);
+      });
       break;
     }
     case "number": {
