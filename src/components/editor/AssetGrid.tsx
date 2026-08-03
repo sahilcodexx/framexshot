@@ -1,6 +1,10 @@
-import { useState, useEffect, memo } from "react";
+import { useState, useEffect, useCallback, useRef, memo } from "react";
+import { Store } from "@tauri-apps/plugin-store";
+import { toast } from "sonner";
+import { Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getThumbnailUrl } from "@/lib/thumbnail-utils";
+import { Button } from "@/components/ui/button";
 
 export interface Asset {
   id: string;
@@ -24,10 +28,12 @@ const ThumbnailButton = memo(function ThumbnailButton({
   asset,
   isSelected,
   onSelect,
+  onRemove,
 }: {
   asset: Asset;
   isSelected: boolean;
   onSelect: () => void;
+  onRemove?: () => void;
 }) {
   const [thumbSrc, setThumbSrc] = useState<string>(asset.src);
 
@@ -42,55 +48,192 @@ const ThumbnailButton = memo(function ThumbnailButton({
   }, [asset.src]);
 
   return (
-    <button
-      onClick={onSelect}
-      aria-label={`Select ${asset.name} background`}
-      className={cn(
-        "group relative w-full aspect-square rounded-lg overflow-hidden transition-shadow",
-        isSelected
-          ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-card"
-          : "ring-1 ring-border hover:ring-ring"
-      )}
-    >
-      <img
-        src={thumbSrc}
-        alt={asset.name}
-        loading="lazy"
-        decoding="async"
-        className="w-full h-full object-cover transition-transform group-hover:scale-110"
-      />
-      {isSelected && (
-        <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center">
-          <div className="size-6 rounded-full bg-blue-500 flex items-center justify-center shadow-lg">
-            <svg className="size-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-            </svg>
+    <div className="relative group">
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-label={`Select ${asset.name} background`}
+        className={cn(
+          "relative w-full aspect-square rounded-xl overflow-hidden transition-all duration-150 transform-gpu active:scale-95",
+          isSelected
+            ? "ring-2 ring-accent ring-offset-2 ring-offset-card shadow-md scale-[1.02]"
+            : "ring-1 ring-border/60 hover:ring-border hover:scale-[1.02]"
+        )}
+      >
+        <img
+          src={thumbSrc}
+          alt={asset.name}
+          loading="lazy"
+          decoding="async"
+          className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+        />
+        {isSelected && (
+          <div className="absolute inset-0 bg-accent/20 flex items-center justify-center">
+            <div className="size-5 rounded-full bg-accent flex items-center justify-center shadow-lg">
+              <svg className="size-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
           </div>
-        </div>
+        )}
+      </button>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          className="absolute -top-1.5 -right-1.5 size-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md z-10 hover:scale-110"
+          aria-label="Remove uploaded image"
+        >
+          <X className="size-3 stroke-[3]" aria-hidden="true" />
+        </button>
       )}
-    </button>
+    </div>
   );
 });
 
 export const AssetGrid = memo(function AssetGrid({ categories, selectedImage, backgroundType, onImageSelect }: AssetGridProps) {
-  const allAssets = categories.flatMap((cat) => cat.assets);
+  const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load uploaded background images from store
+  useEffect(() => {
+    const loadUploaded = async () => {
+      try {
+        const store = await Store.load("settings.json");
+        const uploaded = await store.get<string[]>("uploadedBackgroundImages");
+        if (uploaded) {
+          setUploadedImages(uploaded);
+        }
+      } catch (err) {
+        console.error("Failed to load uploaded images in editor:", err);
+      }
+    };
+    loadUploaded();
+  }, []);
+
+  const handleFileUpload = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      if (!file.type.startsWith("image/")) {
+        toast.error("Please select a valid image file");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const dataUrl = reader.result as string;
+        const newUploaded = [...uploadedImages, dataUrl];
+        setUploadedImages(newUploaded);
+
+        // Apply background immediately to editor
+        onImageSelect(dataUrl);
+
+        try {
+          const store = await Store.load("settings.json");
+          await store.set("uploadedBackgroundImages", newUploaded);
+          await store.save();
+          toast.success("Custom background uploaded");
+        } catch (err) {
+          console.error("Failed to save uploaded image:", err);
+          toast.error("Failed to save background upload");
+        }
+      };
+      reader.onerror = () => {
+        toast.error("Failed to read image file");
+      };
+      reader.readAsDataURL(file);
+
+      event.target.value = "";
+    },
+    [uploadedImages, onImageSelect]
+  );
+
+  const handleRemoveUploaded = useCallback(
+    async (index: number) => {
+      const newUploaded = uploadedImages.filter((_, i) => i !== index);
+      setUploadedImages(newUploaded);
+
+      try {
+        const store = await Store.load("settings.json");
+        await store.set("uploadedBackgroundImages", newUploaded);
+        await store.save();
+        toast.success("Image removed");
+      } catch (err) {
+        console.error("Failed to remove image:", err);
+      }
+    },
+    [uploadedImages]
+  );
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-foreground font-mono text-balance">Wallpapers</h3>
+    <div className="space-y-5">
+      {/* Top Header & Upload Button */}
+      <div className="flex items-center justify-between pb-2 border-b border-[#262626]">
+        <h3 className="text-xs font-semibold text-white tracking-tight">Wallpapers & Media</h3>
+        <div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            className="rounded-full text-xs h-7 px-3 bg-[#262626] text-white hover:bg-[#333333] font-medium"
+          >
+            <Upload className="size-3 mr-1.5" aria-hidden="true" />
+            Upload
+          </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-2 pb-2">
-        {allAssets.map((asset) => (
-          <ThumbnailButton
-            key={asset.id}
-            asset={asset}
-            isSelected={backgroundType === "image" && selectedImage === asset.src}
-            onSelect={() => onImageSelect(asset.src)}
-          />
-        ))}
-      </div>
+      {/* Uploaded Images Section */}
+      {uploadedImages.length > 0 && (
+        <div className="space-y-2">
+          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+            Uploaded Photos
+          </span>
+          <div className="grid grid-cols-4 gap-2">
+            {uploadedImages.map((img, index) => (
+              <ThumbnailButton
+                key={`uploaded-${index}`}
+                asset={{ id: `uploaded-${index}`, src: img, name: `Custom ${index + 1}` }}
+                isSelected={backgroundType === "image" && selectedImage === img}
+                onSelect={() => onImageSelect(img)}
+                onRemove={() => handleRemoveUploaded(index)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Bundled Asset Categories */}
+      {categories.map((category) => (
+        <div key={category.name} className="space-y-2">
+          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+            {category.name}
+          </span>
+          <div className="grid grid-cols-4 gap-2">
+            {category.assets.map((asset) => (
+              <ThumbnailButton
+                key={asset.id}
+                asset={asset}
+                isSelected={backgroundType === "image" && selectedImage === asset.src}
+                onSelect={() => onImageSelect(asset.src)}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 });

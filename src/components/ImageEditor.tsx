@@ -732,12 +732,13 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
             {activeTab === "bg" && (
               <div className="space-y-4">
                 <BackgroundSelector
-                  backgroundType={settings.backgroundType as "transparent" | "white" | "black" | "gray" | "gradient" | "custom"}
+                  backgroundType={settings.backgroundType as "transparent" | "white" | "black" | "gray" | "gradient" | "custom" | "image"}
                   customColor={settings.customColor}
                   selectedGradient={selectedGradientOption.id}
                   onBackgroundTypeChange={actions.setBackgroundType}
                   onCustomColorChange={actions.setCustomColor}
                   onGradientSelect={actions.setGradient}
+                  onImageSelect={actions.handleImageSelect}
                 />
               </div>
             )}

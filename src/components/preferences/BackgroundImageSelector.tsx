@@ -199,12 +199,16 @@ export function BackgroundImageSelector({ onImageSelect }: BackgroundImageSelect
         const dataUrl = reader.result as string;
         const newUploadedImages = [...uploadedImages, dataUrl];
         setUploadedImages(newUploadedImages);
+        setActiveTab("uploads");
+
+        // Auto select newly uploaded image
+        await handleImageSelect(dataUrl);
 
         try {
           const store = await Store.load("settings.json");
           await store.set("uploadedBackgroundImages", newUploadedImages);
           await store.save();
-          toast.success("Image uploaded successfully");
+          toast.success("Image uploaded & set as default background");
         } catch (err) {
           console.error("Failed to save uploaded image:", err);
           toast.error("Failed to save uploaded image");
