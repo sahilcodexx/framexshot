@@ -68,6 +68,44 @@ function getBackgroundImageSrc(settings: EditorSettings): string | null {
 }
 
 /**
+ * Draw an image onto canvas using cover fitting (maintains aspect ratio, crops overflow)
+ */
+function drawImageCover(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  targetWidth: number,
+  targetHeight: number
+) {
+  const imgRatio = img.width / img.height;
+  const targetRatio = targetWidth / targetHeight;
+
+  let sourceX = 0;
+  let sourceY = 0;
+  let sourceWidth = img.width;
+  let sourceHeight = img.height;
+
+  if (imgRatio > targetRatio) {
+    sourceWidth = img.height * targetRatio;
+    sourceX = (img.width - sourceWidth) / 2;
+  } else {
+    sourceHeight = img.width / targetRatio;
+    sourceY = (img.height - sourceHeight) / 2;
+  }
+
+  ctx.drawImage(
+    img,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    0,
+    0,
+    targetWidth,
+    targetHeight
+  );
+}
+
+/**
  * Draw background on a canvas context
  */
 function drawBackground(
@@ -95,7 +133,7 @@ function drawBackground(
       break;
     case "gradient":
       if (bgImage) {
-        ctx.drawImage(bgImage, 0, 0, width, height);
+        drawImageCover(ctx, bgImage, width, height);
       } else {
         const gradient = ctx.createLinearGradient(0, 0, width, height);
         gradient.addColorStop(0, settings.gradientColors[0]);
@@ -110,7 +148,7 @@ function drawBackground(
       break;
     case "image":
       if (bgImage) {
-        ctx.drawImage(bgImage, 0, 0, width, height);
+        drawImageCover(ctx, bgImage, width, height);
       } else {
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, width, height);

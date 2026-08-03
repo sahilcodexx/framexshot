@@ -121,6 +121,41 @@ export function createHighQualityCanvas(options: RenderOptions): HTMLCanvasEleme
   return canvas;
 }
 
+function drawImageCover(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  targetWidth: number,
+  targetHeight: number
+) {
+  const imgRatio = img.width / img.height;
+  const targetRatio = targetWidth / targetHeight;
+
+  let sourceX = 0;
+  let sourceY = 0;
+  let sourceWidth = img.width;
+  let sourceHeight = img.height;
+
+  if (imgRatio > targetRatio) {
+    sourceWidth = img.height * targetRatio;
+    sourceX = (img.width - sourceWidth) / 2;
+  } else {
+    sourceHeight = img.width / targetRatio;
+    sourceY = (img.height - sourceHeight) / 2;
+  }
+
+  ctx.drawImage(
+    img,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    0,
+    0,
+    targetWidth,
+    targetHeight
+  );
+}
+
 function drawBackground(
   ctx: CanvasRenderingContext2D,
   width: number,
@@ -149,7 +184,7 @@ function drawBackground(
       break;
     case "gradient": {
       if (gradientImage) {
-        ctx.drawImage(gradientImage, 0, 0, width, height);
+        drawImageCover(ctx, gradientImage, width, height);
       } else {
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, width, height);
@@ -162,7 +197,7 @@ function drawBackground(
       break;
     case "image":
       if (bgImage && selectedImage) {
-        ctx.drawImage(bgImage, 0, 0, width, height);
+        drawImageCover(ctx, bgImage, width, height);
       } else {
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, width, height);
