@@ -451,6 +451,7 @@ export const useEditorStore = create<EditorStore>()(
       setGradient: (gradient) => {
         get().updateSettings({
           backgroundType: "gradient",
+          selectedImageSrc: null,
           gradientId: gradient.id,
           gradientSrc: gradient.src,
           gradientColors: gradient.colors,
