@@ -422,9 +422,9 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
 
       <div className="flex flex-1 min-h-0">
         {/* Left Sidebar — Actions, Image Transform, Properties, Shadow & Effects */}
-        <div className="w-[300px] shrink-0 border-r border-[#252525] bg-[#1a1a1a] flex flex-col sidebar-scroll">
+        <div className="w-[280px] xl:w-[320px] shrink-0 border-r border-[#252525] bg-[#1a1a1a] flex flex-col sidebar-scroll transition-all duration-200">
           {/* Action buttons bar */}
-          <div className="p-3 flex gap-2 border-b border-[#252525] sticky top-0 bg-[#1a1a1a]/95 backdrop-blur z-10">
+          <div className="p-3 flex gap-2 border-b border-[#252525] sticky top-0 bg-[#1a1a1a] z-20">
             <Button 
               variant="ghost"
               onClick={onCancel}
@@ -623,7 +623,7 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
           </div>
 
           {/* Main Canvas */}
-          <div className="flex-1 flex items-center justify-center p-12 overflow-hidden min-w-0 min-h-0 relative">
+          <div className="flex-1 flex items-center justify-center p-4 sm:p-6 md:p-8 lg:p-12 overflow-hidden min-w-0 min-h-0 relative">
             <div className="w-full h-full flex items-center justify-center min-w-0 min-h-0 z-10">
               {previewUrl ? (
                 <AnnotationCanvas
@@ -636,6 +636,7 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
                   onAnnotationUpdate={handleAnnotationUpdate}
                   onAnnotationSelect={setSelectedAnnotation}
                   onAnnotationDelete={handleAnnotationDelete}
+                  onToolSelect={setSelectedTool}
                 />
               ) : imageLoaded ? (
                 <div className="text-muted-foreground text-sm">Generating preview...</div>
@@ -656,9 +657,9 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
         </div>
 
         {/* Right Sidebar — Redesigned High-Performance Tabbed Styling Panel */}
-        <div className="w-[320px] shrink-0 border-l border-[#252525] bg-[#1a1a1a] flex flex-col sidebar-scroll">
+        <div className="w-[270px] xl:w-[320px] shrink-0 border-l border-[#252525] bg-[#1a1a1a] flex flex-col sidebar-scroll transition-all duration-200">
           {/* Header & Tabs */}
-          <div className="p-3 border-b border-[#252525] sticky top-0 bg-[#1a1a1a]/95 backdrop-blur z-10 space-y-2">
+          <div className="p-3 border-b border-[#252525] sticky top-0 bg-[#1a1a1a] z-20 space-y-2">
             <div className="flex items-center justify-between px-1">
               <span className="text-xs font-semibold text-white tracking-tight flex items-center gap-1.5">
                 <div className="size-3.5 rounded-sm bg-gradient-to-br from-blue-500 to-purple-600" />
