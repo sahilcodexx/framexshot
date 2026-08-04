@@ -107,7 +107,7 @@ pub fn save_base64_image(image_data: &str, save_dir: &str, prefix: &str) -> AppR
 
     fs::write(&file_path, image_bytes).map_err(|e| format!("Failed to save image: {}", e))?;
 
-    Ok(file_path.to_string_lossy().into_owned())
+    Ok(crate::utils::resolve_path(&file_path.to_string_lossy()))
 }
 
 /// Copy a screenshot file to a destination directory
@@ -125,7 +125,7 @@ pub fn copy_screenshot_to_dir(source_path: &str, save_dir: &str) -> AppResult<St
 
     fs::copy(&src_path, &file_path).map_err(|e| format!("Failed to copy screenshot: {}", e))?;
 
-    Ok(file_path.to_string_lossy().into_owned())
+    Ok(crate::utils::resolve_path(&file_path.to_string_lossy()))
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]

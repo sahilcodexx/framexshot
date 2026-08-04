@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { emitTo } from "@tauri-apps/api/event";
+import { listen, emitTo } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 interface SelectionRect {
@@ -43,15 +43,27 @@ export function RegionSelector() {
     loadScreenshot();
   }, [loadScreenshot]);
 
-  // Re-load when the window becomes visible again (Tauri hides instead of destroying)
+  // Listen to explicit backend signal and focus changes for when window is re-shown
   useEffect(() => {
+    const unlistenEvent = listen("reload-selector-screenshot", () => {
+      loadScreenshot();
+    });
+    const unlistenFocus = getCurrentWindow().onFocusChanged((focused) => {
+      if (focused) {
+        loadScreenshot();
+      }
+    });
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
         loadScreenshot();
       }
     };
     document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
+    return () => {
+      unlistenEvent.then((f) => f());
+      unlistenFocus.then((f) => f());
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [loadScreenshot]);
 
   const draw = useCallback((img: HTMLImageElement, sel: SelectionRect | null) => {
