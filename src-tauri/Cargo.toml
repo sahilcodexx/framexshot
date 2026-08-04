@@ -1,6 +1,6 @@
 [package]
 name = "framexshot"
-version = "1.0.1"
+version = "1.0.2"
 description = "FrameXShot — Linux screenshot tool"
 authors = ["kartik labhshetwar"]
 edition = "2021"
@@ -21,7 +21,7 @@ imageproc = "0.25"
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
+tauri = { version = "2", features = ["protocol-asset", "tray-icon", "macos-private-api"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-store = "2"
