@@ -11,6 +11,9 @@ import {
   isLayoutTransformed,
 } from "@/lib/frame-presets";
 
+import { resolveBackgroundPath, getAssetPath } from "@/lib/asset-registry";
+import { gradientOptions } from "@/components/editor/BackgroundSelector";
+
 // Image cache with LRU-like cleanup (max 20 images)
 const MAX_CACHE_SIZE = 20;
 const imageCache = new Map<string, HTMLImageElement>();
@@ -59,10 +62,20 @@ export async function loadImage(src: string): Promise<HTMLImageElement> {
  */
 function getBackgroundImageSrc(settings: EditorSettings): string | null {
   if (settings.backgroundType === "image" && settings.selectedImageSrc) {
-    return settings.selectedImageSrc;
+    return resolveBackgroundPath(settings.selectedImageSrc);
   }
-  if (settings.backgroundType === "gradient" && settings.gradientSrc) {
-    return settings.gradientSrc;
+  if (settings.backgroundType === "gradient") {
+    if (settings.gradientSrc) {
+      const resolved = resolveBackgroundPath(settings.gradientSrc);
+      if (resolved) return resolved;
+    }
+    if (settings.gradientId) {
+      const assetId = settings.gradientId.replace("mesh-", "gradient-");
+      const path = getAssetPath(assetId);
+      if (path) return path;
+    }
+    const gradOpt = gradientOptions.find((g) => g.id === settings.gradientId);
+    if (gradOpt) return gradOpt.src;
   }
   return null;
 }
@@ -136,8 +149,9 @@ function drawBackground(
         drawImageCover(ctx, bgImage, width, height);
       } else {
         const gradient = ctx.createLinearGradient(0, 0, width, height);
-        gradient.addColorStop(0, settings.gradientColors[0]);
-        gradient.addColorStop(1, settings.gradientColors[1]);
+        const colors = settings.gradientColors || ["#667eea", "#764ba2"];
+        gradient.addColorStop(0, colors[0]);
+        gradient.addColorStop(1, colors[1]);
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, width, height);
       }

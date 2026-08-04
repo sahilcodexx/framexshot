@@ -271,11 +271,11 @@ export const useEditorStore = create<EditorStore>()(
                 state.settings.selectedImageSrc = resolvedPath;
               }
 
-              if (storedBg.startsWith("gradient-")) {
-                const gradientIndex = storedBg.replace("gradient-", "");
+              if (storedBgType === "gradient" || (storedBg && (storedBg.startsWith("gradient-") || storedBg.startsWith("mesh-")))) {
+                const normalizedId = storedBg ? storedBg.replace("gradient-", "mesh-") : "mesh-1";
                 const gradient = gradientOptions.find(
-                  (option) => option.id === `mesh-${gradientIndex}`
-                );
+                  (option) => option.id === normalizedId || option.id === storedBg
+                ) || gradientOptions[0];
 
                 if (gradient) {
                   state.settings.gradientId = gradient.id;
