@@ -51,6 +51,9 @@ pub fn run() {
         if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         }
+        if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        }
     }
 
     tauri::Builder::default()
@@ -178,9 +181,8 @@ pub fn run() {
                 ])
                 .build()?;
 
-            let _tray = tauri::tray::TrayIconBuilder::new()
+            let mut tray_builder = tauri::tray::TrayIconBuilder::new()
                 .menu(&menu)
-                .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("FrameXShot")
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "open" => {
@@ -223,8 +225,13 @@ pub fn run() {
                         app.exit(0);
                     }
                     _ => {}
-                })
-                .build(app)?;
+                });
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            let _tray = tray_builder.build(app)?;
 
             Ok(())
         })
