@@ -1,274 +1,190 @@
-import { useEffect, useMemo, useRef } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { emitTo } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
-interface Region {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+interface SelectionRect {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
 }
 
-interface RegionSelectorProps {
-  onSelect: (region: Region) => void;
-  onCancel: () => void;
-  monitorShots: {
-    id: number;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    scale_factor: number;
-    path: string;
-  }[];
-}
-
-export function RegionSelector({ onSelect, onCancel, monitorShots }: RegionSelectorProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
+export function RegionSelector() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rafRef = useRef<number>(0);
-  
-  // Selection state stored in refs for performance
+  const [ready, setReady] = useState(false);
+  const selectionRef = useRef<SelectionRect | null>(null);
   const isSelectingRef = useRef(false);
-  const startRef = useRef({ x: 0, y: 0 });
-  const currentRef = useRef({ x: 0, y: 0 });
-  const needsUpdateRef = useRef(false);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const [tick, setTick] = useState(0);
 
-  // Calculate bounds for multi-monitor
-  const bounds = useMemo(() => {
-    if (!monitorShots.length) return { minX: 0, minY: 0, width: 0, height: 0 };
-    const result = monitorShots.reduce(
-      (acc, s) => ({
-        minX: Math.min(acc.minX, s.x),
-        minY: Math.min(acc.minY, s.y),
-        maxX: Math.max(acc.maxX, s.x + s.width),
-        maxY: Math.max(acc.maxY, s.y + s.height),
-      }),
-      { 
-        minX: monitorShots[0].x, 
-        minY: monitorShots[0].y,
-        maxX: monitorShots[0].x + monitorShots[0].width,
-        maxY: monitorShots[0].y + monitorShots[0].height,
-      }
-    );
-    return {
-      minX: result.minX,
-      minY: result.minY,
-      width: result.maxX - result.minX,
-      height: result.maxY - result.minY,
-    };
-  }, [monitorShots]);
+  // Load screenshot on mount + every time the window is re-shown
+  const loadScreenshot = useCallback(() => {
+    setReady(false);
+    selectionRef.current = null;
+    isSelectingRef.current = false;
 
-  // Normalized shots for rendering
-  const normalizedShots = useMemo(
-    () =>
-      monitorShots.map((shot) => ({
-        ...shot,
-        left: shot.x - bounds.minX,
-        top: shot.y - bounds.minY,
-        url: convertFileSrc(shot.path),
-      })),
-    [monitorShots, bounds.minX, bounds.minY]
-  );
+    invoke<string>("capture_screen_for_selector")
+      .then((base64Data) => {
+        const img = new Image();
+        img.onload = () => {
+          imgRef.current = img;
+          draw(img, null);
+          setReady(true);
+        };
+        img.onerror = (e) => console.error("Failed to load base64 screenshot", e);
+        img.src = base64Data;
+      })
+      .catch((err) => console.error("capture_screen_for_selector failed:", err));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Canvas rendering loop - runs on RAF for smooth updates
   useEffect(() => {
+    loadScreenshot();
+  }, [loadScreenshot]);
+
+  // Re-load when the window becomes visible again (Tauri hides instead of destroying)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        loadScreenshot();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [loadScreenshot]);
+
+  const draw = useCallback((img: HTMLImageElement, sel: SelectionRect | null) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
-    const ctx = canvas.getContext("2d", { alpha: true });
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Set canvas size to match container
-    const updateCanvasSize = () => {
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = bounds.width * dpr;
-      canvas.height = bounds.height * dpr;
-      canvas.style.width = `${bounds.width}px`;
-      canvas.style.height = `${bounds.height}px`;
-      ctx.scale(dpr, dpr);
-    };
-    updateCanvasSize();
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-    const render = () => {
-      if (!needsUpdateRef.current && isSelectingRef.current) {
-        rafRef.current = requestAnimationFrame(render);
-        return;
-      }
+    // Draw screenshot stretched to fill entire window (CSS pixels)
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-      // Clear canvas
-      ctx.clearRect(0, 0, bounds.width, bounds.height);
+    // dark overlay
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      if (isSelectingRef.current || needsUpdateRef.current) {
-        const x = Math.min(startRef.current.x, currentRef.current.x);
-        const y = Math.min(startRef.current.y, currentRef.current.y);
-        const width = Math.abs(currentRef.current.x - startRef.current.x);
-        const height = Math.abs(currentRef.current.y - startRef.current.y);
-
-        if (width > 0 && height > 0) {
-          // Draw dark overlay with cutout (using composite operation for performance)
-          ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-          
-          // Top
-          ctx.fillRect(0, 0, bounds.width, y);
-          // Left
-          ctx.fillRect(0, y, x, height);
-          // Right
-          ctx.fillRect(x + width, y, bounds.width - x - width, height);
-          // Bottom
-          ctx.fillRect(0, y + height, bounds.width, bounds.height - y - height);
-
-          // Selection border
-          ctx.strokeStyle = "#3b82f6";
-          ctx.lineWidth = 2;
-          ctx.strokeRect(x, y, width, height);
-
-          // Corner handles
-          const handleSize = 6;
-          ctx.fillStyle = "#3b82f6";
-          const corners = [
-            [x - handleSize/2, y - handleSize/2],
-            [x + width - handleSize/2, y - handleSize/2],
-            [x - handleSize/2, y + height - handleSize/2],
-            [x + width - handleSize/2, y + height - handleSize/2],
-          ];
-          corners.forEach(([cx, cy]) => {
-            ctx.fillRect(cx, cy, handleSize, handleSize);
-            ctx.strokeStyle = "#fff";
-            ctx.lineWidth = 1;
-            ctx.strokeRect(cx, cy, handleSize, handleSize);
-          });
-
-          // Dimension label
-          const label = `${Math.round(width)} × ${Math.round(height)}`;
-          ctx.font = "12px ui-monospace, monospace";
-          const textMetrics = ctx.measureText(label);
-          const labelPadding = 8;
-          const labelHeight = 20;
-          const labelWidth = textMetrics.width + labelPadding * 2;
-          const labelX = x + width / 2 - labelWidth / 2;
-          const labelY = y - labelHeight - 8;
-
-          if (labelY > 0) {
-            ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
-            ctx.beginPath();
-            ctx.roundRect(labelX, labelY, labelWidth, labelHeight, 4);
-            ctx.fill();
-
-            ctx.fillStyle = "#fff";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(label, x + width / 2, labelY + labelHeight / 2);
-          }
+    if (sel) {
+      const x = Math.min(sel.startX, sel.endX);
+      const y = Math.min(sel.startY, sel.endY);
+      const w = Math.abs(sel.endX - sel.startX);
+      const h = Math.abs(sel.endY - sel.startY);
+      if (w > 0 && h > 0) {
+        const scaleX = img.naturalWidth / canvas.width;
+        const scaleY = img.naturalHeight / canvas.height;
+        ctx.clearRect(x, y, w, h);
+        ctx.drawImage(img, x * scaleX, y * scaleY, w * scaleX, h * scaleY, x, y, w, h);
+        ctx.strokeStyle = "#3b82f6";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+        // corner handles
+        ctx.fillStyle = "#3b82f6";
+        for (const [hx, hy] of [[x,y],[x+w,y],[x,y+h],[x+w,y+h]] as [number,number][]) {
+          ctx.fillRect(hx - 4, hy - 4, 8, 8);
         }
-        needsUpdateRef.current = false;
-      } else {
-        // No selection - just draw the overlay
-        ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-        ctx.fillRect(0, 0, bounds.width, bounds.height);
+        // size label
+        const label = `${Math.round(w)} × ${Math.round(h)}`;
+        ctx.font = "bold 13px monospace";
+        const lw = ctx.measureText(label).width + 14;
+        const ly = y > 28 ? y - 26 : y + h + 4;
+        ctx.fillStyle = "#3b82f6";
+        ctx.fillRect(x, ly, lw, 22);
+        ctx.fillStyle = "#fff";
+        ctx.fillText(label, x + 7, ly + 15);
       }
+    }
 
-      rafRef.current = requestAnimationFrame(render);
-    };
+    // instruction bar
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(0, 0, canvas.width, 44);
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.font = "bold 14px system-ui,sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Drag to select a region   •   Esc to cancel", canvas.width / 2, 27);
+    ctx.textAlign = "left";
+  }, []);
 
-    rafRef.current = requestAnimationFrame(render);
-
-    return () => {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-      }
-    };
-  }, [bounds.width, bounds.height]);
-
-  // Event handlers
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    if (imgRef.current) draw(imgRef.current, selectionRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick, draw]);
 
-    const handleMouseDown = (e: MouseEvent) => {
-      e.preventDefault();
-      isSelectingRef.current = true;
-      startRef.current = { x: e.clientX, y: e.clientY };
-      currentRef.current = { x: e.clientX, y: e.clientY };
-      needsUpdateRef.current = true;
-    };
+  const onMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    isSelectingRef.current = true;
+    selectionRef.current = { startX: e.clientX, startY: e.clientY, endX: e.clientX, endY: e.clientY };
+    setTick(t => t + 1);
+  }, []);
 
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isSelectingRef.current) return;
-      currentRef.current = { x: e.clientX, y: e.clientY };
-      needsUpdateRef.current = true;
-    };
+  const onMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isSelectingRef.current || !selectionRef.current) return;
+    selectionRef.current = { ...selectionRef.current, endX: e.clientX, endY: e.clientY };
+    setTick(t => t + 1);
+  }, []);
 
-    const handleMouseUp = () => {
-      if (!isSelectingRef.current) return;
-      isSelectingRef.current = false;
+  const onMouseUp = useCallback(async () => {
+    if (!isSelectingRef.current || !selectionRef.current) return;
+    isSelectingRef.current = false;
+    const sel = selectionRef.current;
+    const x = Math.min(sel.startX, sel.endX);
+    const y = Math.min(sel.startY, sel.endY);
+    const w = Math.abs(sel.endX - sel.startX);
+    const h = Math.abs(sel.endY - sel.startY);
+    if (w < 8 || h < 8) {
+      selectionRef.current = null;
+      setTick(t => t + 1);
+      return;
+    }
 
-      const x = Math.min(startRef.current.x, currentRef.current.x);
-      const y = Math.min(startRef.current.y, currentRef.current.y);
-      const width = Math.abs(currentRef.current.x - startRef.current.x);
-      const height = Math.abs(currentRef.current.y - startRef.current.y);
+    // Scale CSS pixel coordinates to the actual image pixel coordinates.
+    // The canvas displays at window.innerWidth x window.innerHeight (CSS pixels),
+    // but the captured screenshot has its own natural resolution (physical pixels).
+    // On high-DPI displays (e.g. 150% scaling), these differ.
+    const img = imgRef.current;
+    const scaleX = img ? img.naturalWidth / window.innerWidth : 1;
+    const scaleY = img ? img.naturalHeight / window.innerHeight : 1;
 
-      if (width > 10 && height > 10) {
-        onSelect({
-          x: x + bounds.minX,
-          y: y + bounds.minY,
-          width,
-          height,
-        });
-      } else {
-        // Reset selection if too small
-        needsUpdateRef.current = true;
+    // Hide selector FIRST, then emit — matches working better-windows pattern
+    await getCurrentWindow().hide();
+    await emitTo("main", "region-selected", {
+      x: Math.round(x * scaleX),
+      y: Math.round(y * scaleY),
+      width: Math.round(w * scaleX),
+      height: Math.round(h * scaleY),
+    });
+  }, []);
+
+  // Escape key handler
+  useEffect(() => {
+    const onKey = async (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        await getCurrentWindow().hide();
+        await emitTo("main", "region-selection-cancelled", {});
       }
     };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-    };
-
-    container.addEventListener("mousedown", handleMouseDown);
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      container.removeEventListener("mousedown", handleMouseDown);
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [bounds.minX, bounds.minY, onSelect, onCancel]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className="fixed inset-0 z-50 cursor-crosshair select-none overflow-hidden"
-    >
-      {/* Screenshot backgrounds */}
-      {normalizedShots.map((shot) => (
-        <img
-          key={shot.id}
-          src={shot.url}
-          alt=""
-          draggable={false}
-          className="absolute select-none pointer-events-none"
-          style={{
-            left: shot.left,
-            top: shot.top,
-            width: shot.width,
-            height: shot.height,
-          }}
-        />
-      ))}
-
-      {/* Canvas overlay for selection - GPU accelerated */}
+    <div className="fixed inset-0 overflow-hidden" style={{ cursor: "crosshair", background: "#000" }}>
+      {!ready && (
+        <div className="flex items-center justify-center w-full h-full text-white text-sm font-medium">
+          Preparing capture…
+        </div>
+      )}
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 pointer-events-none"
+        style={{ display: ready ? "block" : "none", cursor: "crosshair", width: "100%", height: "100%" }}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
       />
-
-      {/* Instructions */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-black/80 text-white px-4 py-2 rounded-lg text-sm pointer-events-none">
-        Drag to select · ESC to cancel
-      </div>
     </div>
   );
 }

@@ -170,7 +170,7 @@ export async function processScreenshotWithDefaultBackground(
       reject(new Error(`Failed to load image from: ${imagePath}`));
     };
 
-    const assetUrl = convertFileSrc(imagePath);
+    const assetUrl = imagePath.startsWith("data:") ? imagePath : convertFileSrc(imagePath);
     img.src = assetUrl;
   });
 }

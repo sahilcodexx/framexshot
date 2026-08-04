@@ -1,9 +1,13 @@
-//! Clipboard operations module — Linux implementation
+//! Clipboard operations module
 
 use crate::utils::AppResult;
+
+#[cfg(target_os = "linux")]
 use std::io::Write;
+#[cfg(target_os = "linux")]
 use std::process::{Command, Stdio};
 
+#[cfg(target_os = "linux")]
 fn has_binary(name: &str) -> bool {
     Command::new("which")
         .arg(name)
@@ -14,8 +18,9 @@ fn has_binary(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Copy an image file to the system clipboard.
+/// Copy an image file to the system clipboard (Linux implementation).
 /// Tries xclip, then xsel, then wl-copy (Wayland).
+#[cfg(target_os = "linux")]
 pub fn copy_image_to_clipboard(image_path: &str) -> AppResult<()> {
     let image_bytes =
         std::fs::read(image_path).map_err(|e| format!("Failed to read image: {}", e))?;
@@ -97,7 +102,8 @@ pub fn copy_image_to_clipboard(image_path: &str) -> AppResult<()> {
     Err("No clipboard tool found. Please install xclip, xsel, or wl-clipboard.".to_string())
 }
 
-/// Copy text to the system clipboard.
+/// Copy text to the system clipboard (Linux implementation).
+#[cfg(target_os = "linux")]
 pub fn copy_text_to_clipboard(text: &str) -> AppResult<()> {
     let bytes = text.as_bytes();
 
@@ -147,3 +153,48 @@ pub fn copy_text_to_clipboard(text: &str) -> AppResult<()> {
 
     Err("No clipboard tool found. Please install xclip or wl-clipboard.".to_string())
 }
+
+/// Copy an image file to the system clipboard (Windows/macOS/fallback using arboard).
+#[cfg(not(target_os = "linux"))]
+pub fn copy_image_to_clipboard(image_path: &str) -> AppResult<()> {
+    use arboard::Clipboard;
+    use std::path::Path;
+
+    let path = Path::new(image_path);
+    let img = image::open(path)
+        .map_err(|e| format!("Failed to open image for clipboard: {}", e))?;
+
+    let rgba = img.to_rgba8();
+    let (width, height) = rgba.dimensions();
+
+    let image_data = arboard::ImageData {
+        width: width as usize,
+        height: height as usize,
+        bytes: rgba.into_raw().into(),
+    };
+
+    let mut clipboard = Clipboard::new()
+        .map_err(|e| format!("Failed to open clipboard: {}", e))?;
+
+    clipboard
+        .set_image(image_data)
+        .map_err(|e| format!("Failed to copy image to clipboard: {}", e))?;
+
+    Ok(())
+}
+
+/// Copy text to the system clipboard (Windows/macOS/fallback using arboard).
+#[cfg(not(target_os = "linux"))]
+pub fn copy_text_to_clipboard(text: &str) -> AppResult<()> {
+    use arboard::Clipboard;
+
+    let mut clipboard = Clipboard::new()
+        .map_err(|e| format!("Failed to open clipboard: {}", e))?;
+
+    clipboard
+        .set_text(text)
+        .map_err(|e| format!("Failed to copy text to clipboard: {}", e))?;
+
+    Ok(())
+}
+
