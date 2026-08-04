@@ -65,8 +65,10 @@ function keyEventToShortcut(e: KeyboardEvent): string | null {
     return null; // Still waiting for the main key
   }
   
-  // Need at least one modifier for a valid shortcut
-  if (parts.length === 0) {
+  const isFKey = key.startsWith("F") && !isNaN(parseInt(key.slice(1)));
+
+  // Need at least one modifier for a valid shortcut (unless F-key)
+  if (parts.length === 0 && !isFKey) {
     return null;
   }
   
@@ -85,7 +87,7 @@ function keyEventToShortcut(e: KeyboardEvent): string | null {
   else if (key === "Backspace") keyName = "Backspace";
   else if (key === "Delete") keyName = "Delete";
   else if (key.length === 1) keyName = key.toUpperCase();
-  else if (key.startsWith("F") && !isNaN(parseInt(key.slice(1)))) keyName = key; // F1-F12
+  else if (isFKey) keyName = key;
   
   parts.push(keyName);
   
@@ -94,29 +96,33 @@ function keyEventToShortcut(e: KeyboardEvent): string | null {
 
 export function KeyboardShortcutManager({ onShortcutsChange }: KeyboardShortcutManagerProps) {
   const [shortcuts, setShortcuts] = useState<KeyboardShortcut[]>(DEFAULT_SHORTCUTS);
+  const [isRecording, setIsRecording] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [recordedShortcut, setRecordedShortcut] = useState<string | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
+  const recordedShortcutRef = useRef<string | null>(null);
   const recordingRef = useRef<HTMLButtonElement>(null);
 
+  // Load shortcuts on mount
   useEffect(() => {
     const loadShortcuts = async () => {
       try {
         const store = await Store.load("settings.json");
-        const saved = await store.get<KeyboardShortcut[]>("keyboardShortcuts");
-        if (saved && saved.length > 0) {
-          // Merge saved shortcuts with defaults, preserving all saved values
-          // Only add missing default shortcuts that don't exist in saved
-          const savedIds = new Set(saved.map((s) => s.id));
-          const missingDefaults = DEFAULT_SHORTCUTS.filter((d) => !savedIds.has(d.id));
-          const mergedShortcuts = [...saved, ...missingDefaults];
+        const savedShortcuts = await store.get<KeyboardShortcut[]>("keyboardShortcuts");
+
+        if (savedShortcuts && Array.isArray(savedShortcuts)) {
+          const mergedShortcuts = DEFAULT_SHORTCUTS.map((defaultShortcut) => {
+            const saved = savedShortcuts.find((s) => s.id === defaultShortcut.id);
+            return saved ? { ...defaultShortcut, ...saved } : defaultShortcut;
+          });
+
           setShortcuts(mergedShortcuts);
+          onShortcutsChange?.(mergedShortcuts);
         } else {
           setShortcuts(DEFAULT_SHORTCUTS);
+          onShortcutsChange?.(DEFAULT_SHORTCUTS);
         }
       } catch (err) {
         console.error("Failed to load shortcuts:", err);
-        setShortcuts(DEFAULT_SHORTCUTS);
       }
     };
     loadShortcuts();
@@ -135,11 +141,13 @@ export function KeyboardShortcutManager({ onShortcutsChange }: KeyboardShortcutM
         setIsRecording(false);
         setEditingId(null);
         setRecordedShortcut(null);
+        recordedShortcutRef.current = null;
         return;
       }
 
       const shortcut = keyEventToShortcut(e);
       if (shortcut) {
+        recordedShortcutRef.current = shortcut;
         setRecordedShortcut(shortcut);
       }
     };
@@ -148,10 +156,10 @@ export function KeyboardShortcutManager({ onShortcutsChange }: KeyboardShortcutM
       e.preventDefault();
       e.stopPropagation();
 
-      // Only save when we have a recorded shortcut and user releases a key
-      if (recordedShortcut && editingId) {
+      const finalShortcut = recordedShortcutRef.current;
+      if (finalShortcut && editingId) {
         const newShortcuts = shortcuts.map((s) =>
-          s.id === editingId ? { ...s, shortcut: recordedShortcut } : s
+          s.id === editingId ? { ...s, shortcut: finalShortcut } : s
         );
         setShortcuts(newShortcuts);
         
@@ -166,6 +174,7 @@ export function KeyboardShortcutManager({ onShortcutsChange }: KeyboardShortcutM
           toast.error("Failed to save shortcuts");
         }
 
+        recordedShortcutRef.current = null;
         setIsRecording(false);
         setEditingId(null);
         setRecordedShortcut(null);
@@ -179,7 +188,7 @@ export function KeyboardShortcutManager({ onShortcutsChange }: KeyboardShortcutM
       window.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener("keyup", handleKeyUp, true);
     };
-  }, [isRecording, editingId, recordedShortcut, shortcuts, onShortcutsChange]);
+  }, [isRecording, editingId, shortcuts, onShortcutsChange]);
 
   const saveShortcuts = useCallback(async (newShortcuts: KeyboardShortcut[]) => {
     try {
