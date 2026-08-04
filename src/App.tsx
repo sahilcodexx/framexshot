@@ -11,7 +11,7 @@ import {
   LogicalSize,
   PhysicalPosition,
 } from "@tauri-apps/api/window";
-import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
+import { register, unregister, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { Store } from "@tauri-apps/plugin-store";
 import { AppWindowMac, Crop, Folder, Github, Globe, Monitor, ScanText, Twitter } from "lucide-react";
 import { toast } from "sonner";
@@ -49,14 +49,23 @@ const DEFAULT_SHORTCUTS: KeyboardShortcut[] = [
   { id: "ocr", action: "OCR Region", shortcut: "CommandOrControl+Shift+O", enabled: false },
 ];
 
+const isMac = typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent);
+
 function formatShortcut(shortcut: string): string {
+  if (isMac) {
+    return shortcut
+      .replace(/CommandOrControl/g, "⌘")
+      .replace(/Command/g, "⌘")
+      .replace(/Control/g, "Ctrl")
+      .replace(/Shift/g, "⇧")
+      .replace(/Alt|Option/g, "⌥");
+  }
   return shortcut
     .replace(/CommandOrControl/g, "Ctrl")
     .replace(/Command/g, "Ctrl")
     .replace(/Control/g, "Ctrl")
     .replace(/Shift/g, "Shift")
-    .replace(/Alt/g, "Alt")
-    .replace(/Option/g, "Alt");
+    .replace(/Alt|Option/g, "Alt");
 }
 
 async function restoreWindowOnScreen(mouseX?: number, mouseY?: number) {
@@ -439,20 +448,28 @@ function App() {
     }
   }, [isCapturing]);
 
-  // Setup hotkeys whenever settings change
+  // Setup ref to hold the latest handleCapture function to prevent stale closures and avoid re-registering hotkeys
+  const handleCaptureRef = useRef(handleCapture);
   useEffect(() => {
+    handleCaptureRef.current = handleCapture;
+  }, [handleCapture]);
+
+  // Setup desktop global hotkeys
+  useEffect(() => {
+    let active = true;
+
     const setupHotkeys = async () => {
       try {
-        const shortcutsToUnregister = Array.from(registeredShortcutsRef.current);
-        if (shortcutsToUnregister.length > 0) {
-          try {
-            await unregister(shortcutsToUnregister);
-          } catch (err) {
-            console.error("Failed to unregister shortcuts:", err);
+        try {
+          await unregisterAll();
+        } catch {
+          const shortcutsToUnregister = Array.from(registeredShortcutsRef.current);
+          if (shortcutsToUnregister.length > 0) {
+            await unregister(shortcutsToUnregister).catch(() => {});
           }
         }
         registeredShortcutsRef.current.clear();
-        
+
         const actionMap: Record<string, CaptureMode> = {
           "Capture Region": "region",
           "Capture Screen": "fullscreen",
@@ -461,41 +478,62 @@ function App() {
         };
 
         for (const shortcut of shortcuts) {
-          if (!shortcut.enabled) continue;
-          
+          if (!shortcut.enabled || !active) continue;
+
           const action = actionMap[shortcut.action];
           if (action) {
+            const hotkeyStr = shortcut.shortcut.trim();
+            if (!hotkeyStr) continue;
+
             try {
-              await register(shortcut.shortcut, () => handleCapture(action));
-              registeredShortcutsRef.current.add(shortcut.shortcut);
+              await register(hotkeyStr, (event) => {
+                // Only trigger on KeyDown/Pressed event to avoid double-triggers on KeyUp
+                if (!event || event.state === "Pressed" || !event.state) {
+                  handleCaptureRef.current(action);
+                }
+              });
+              registeredShortcutsRef.current.add(hotkeyStr);
             } catch (err) {
-              console.error(`Failed to register shortcut ${shortcut.shortcut}:`, err);
+              console.warn(`Failed to register primary shortcut "${hotkeyStr}":`, err);
+
+              // Fallback for Linux/Windows/Mac if CommandOrControl alias needs alternative format
+              const fallbackStr = hotkeyStr.includes("CommandOrControl")
+                ? hotkeyStr.replace("CommandOrControl", "Ctrl")
+                : hotkeyStr.includes("Ctrl")
+                ? hotkeyStr.replace("Ctrl", "CommandOrControl")
+                : null;
+
+              if (fallbackStr) {
+                try {
+                  await register(fallbackStr, (event) => {
+                    if (!event || event.state === "Pressed" || !event.state) {
+                      handleCaptureRef.current(action);
+                    }
+                  });
+                  registeredShortcutsRef.current.add(fallbackStr);
+                } catch (fallbackErr) {
+                  console.error(`Failed to register fallback shortcut "${fallbackStr}":`, fallbackErr);
+                }
+              }
             }
           }
         }
       } catch (err) {
         console.error("Failed to setup hotkeys:", err);
-        setError(`Hotkey registration failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     };
 
     setupHotkeys();
 
     return () => {
+      active = false;
       const shortcutsToUnregister = Array.from(registeredShortcutsRef.current);
       if (shortcutsToUnregister.length > 0) {
         unregister(shortcutsToUnregister).catch(console.error);
       }
       registeredShortcutsRef.current.clear();
     };
-  }, [shortcuts, settingsVersion, handleCapture]);
-
-  // Setup tray menu event listeners - only once on mount
-  // Use a ref to hold the latest handleCapture to avoid re-registering listeners
-  const handleCaptureRef = useRef(handleCapture);
-  useEffect(() => {
-    handleCaptureRef.current = handleCapture;
-  }, [handleCapture]);
+  }, [shortcuts, settingsVersion]);
 
   useEffect(() => {
     let unlisten1: (() => void) | null = null;

@@ -23,15 +23,25 @@ const DEFAULT_SHORTCUTS: KeyboardShortcut[] = [
   { id: "ocr", action: "OCR Region", shortcut: "CommandOrControl+Shift+O", enabled: false },
 ];
 
+const isMac = typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent);
+
 function formatShortcut(shortcut: string): string {
+  if (isMac) {
+    return shortcut
+      .replace(/CommandOrControl/g, "⌘")
+      .replace(/Command/g, "⌘")
+      .replace(/Control/g, "⌃")
+      .replace(/Shift/g, "⇧")
+      .replace(/Alt|Option/g, "⌥")
+      .replace(/\+/g, "");
+  }
   return shortcut
-    .replace(/CommandOrControl/g, "⌘")
-    .replace(/Command/g, "⌘")
-    .replace(/Control/g, "⌃")
-    .replace(/Shift/g, "⇧")
-    .replace(/Alt/g, "⌥")
-    .replace(/Option/g, "⌥")
-    .replace(/\+/g, "");
+    .replace(/CommandOrControl/g, "Ctrl+")
+    .replace(/Command/g, "Ctrl+")
+    .replace(/Control/g, "Ctrl+")
+    .replace(/Shift/g, "Shift+")
+    .replace(/Alt|Option/g, "Alt+")
+    .replace(/\+\+/g, "+");
 }
 
 // Convert a keyboard event to Tauri shortcut format
