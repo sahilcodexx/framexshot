@@ -23,7 +23,8 @@
           "$DESKTOP/**",
           "$HOME/Desktop/**",
           "/tmp/**",
-          "/var/tmp/**"
+          "/var/tmp/**",
+          "/run/user/**"
         ]
       }
     },

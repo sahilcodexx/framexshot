@@ -66,8 +66,33 @@ pub fn run() {
                 }
             }
 
-            // Check CLI arguments for Hyprland / Wayland native keybindings
+            // Check CLI arguments
             let args: Vec<String> = std::env::args().collect();
+            let is_hidden = args.iter().any(|arg| arg == "--hidden");
+
+            // Create main window — visible unless --hidden was passed
+            let window =
+                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                    .title("FrameXShot")
+                    .inner_size(1200.0, 800.0)
+                    .min_inner_size(800.0, 600.0)
+                    .center()
+                    .resizable(true)
+                    .decorations(false)
+                    .visible(!is_hidden)
+                    .build()?;
+
+            let window_clone = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    if let Err(e) = window_clone.hide() {
+                        eprintln!("Failed to hide window: {}", e);
+                    }
+                    api.prevent_close();
+                }
+            });
+
+            // Process CLI capture flags after window creation
             let app_handle = app.handle().clone();
 
             if args.iter().any(|arg| arg == "--capture-region" || arg == "-r") {
@@ -83,28 +108,6 @@ pub fn run() {
                 let _ = show_main_window(&app_handle);
                 let _ = app_handle.emit("capture-ocr", ());
             }
-
-            // Create main window — hidden initially
-            let window =
-                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                    .title("FrameXShot")
-                    .inner_size(1200.0, 800.0)
-                    .min_inner_size(800.0, 600.0)
-                    .center()
-                    .resizable(true)
-                    .decorations(false)
-                    .visible(false)
-                    .build()?;
-
-            let window_clone = window.clone();
-            window.on_window_event(move |event| {
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    if let Err(e) = window_clone.hide() {
-                        eprintln!("Failed to hide window: {}", e);
-                    }
-                    api.prevent_close();
-                }
-            });
 
             // Tray menu
             let open_item = MenuItemBuilder::with_id("open", "Open FrameXShot").build(app)?;

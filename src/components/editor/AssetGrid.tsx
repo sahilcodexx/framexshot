@@ -35,17 +35,7 @@ const ThumbnailButton = memo(function ThumbnailButton({
   onSelect: () => void;
   onRemove?: () => void;
 }) {
-  const [thumbSrc, setThumbSrc] = useState<string>(asset.src);
-
-  useEffect(() => {
-    let isMounted = true;
-    getThumbnailUrl(asset.src, 140).then((url) => {
-      if (isMounted) setThumbSrc(url);
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, [asset.src]);
+  const thumbSrc = getThumbnailUrl(asset.src, 140);
 
   return (
     <div className="relative group">

@@ -3,7 +3,6 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { toast } from "sonner";
 import { Loader2, Redo2, Undo2, Palette, Image as ImageIcon, LayoutGrid, Box } from "lucide-react";
-import { TitleBar } from "@/components/TitleBar";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { BackgroundSelector, gradientOptions } from "./editor/BackgroundSelector";
@@ -157,11 +156,6 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
 
   // Combined error
   const error = loadError || previewError;
-
-  // Initialize store on mount
-  useEffect(() => {
-    editorActions.initialize();
-  }, []);
 
   // Initialize store once on mount
   useEffect(() => {
@@ -417,9 +411,6 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
 
   return (
     <div className="flex flex-col w-full h-full bg-[#181818] text-foreground font-sans select-none">
-      {/* Custom Mac-style Title Bar */}
-      <TitleBar />
-
       <div className="flex flex-1 min-h-0">
         {/* Left Sidebar — Actions, Image Transform, Properties, Shadow & Effects */}
         <div className="w-[280px] xl:w-[320px] shrink-0 border-r border-[#252525] bg-[#1a1a1a] flex flex-col sidebar-scroll transition-all duration-200">

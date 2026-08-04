@@ -27,17 +27,7 @@ const WidescreenThumbnailItem = memo(function WidescreenThumbnailItem({
   isSelected: boolean;
   onSelect: () => void;
 }) {
-  const [thumbSrc, setThumbSrc] = useState<string>(src);
-
-  useEffect(() => {
-    let isMounted = true;
-    getThumbnailUrl(src, 220).then((url) => {
-      if (isMounted) setThumbSrc(url);
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, [src]);
+  const thumbSrc = getThumbnailUrl(src, 220);
 
   return (
     <button

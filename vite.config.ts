@@ -23,17 +23,16 @@ export default defineConfig(async () => ({
     target: "es2020",
     rollupOptions: {
       output: {
-        manualChunks: {
-          "vendor-react": ["react", "react-dom"],
-          "vendor-ui": [
-            "@radix-ui/react-dialog",
-            "@radix-ui/react-dropdown-menu",
-            "@radix-ui/react-switch",
-            "@radix-ui/react-tooltip",
-            "lucide-react",
-          ],
-          "vendor-motion": ["motion"],
-          "vendor-state": ["zustand", "immer"],
+        manualChunks(id: string) {
+          const normalized = id.replace(/\\/g, "/");
+          if (normalized.includes("node_modules")) {
+            if (
+              /\/node_modules\/.*(react|react-dom|scheduler|@radix-ui|lucide-react|motion|framer-motion|zustand|immer|clsx|tailwind-merge|sonner)\b/.test(normalized) ||
+              /\/(react|react-dom|scheduler|@radix-ui|lucide-react|motion|framer-motion|zustand|immer)[@\/]/.test(normalized)
+            ) {
+              return "vendor-react";
+            }
+          }
         },
       },
     },

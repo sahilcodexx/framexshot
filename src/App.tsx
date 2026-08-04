@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardShortcut } from "./components/preferences/KeyboardShortcutManager";
 import { SettingsIcon } from "./components/SettingsIcon";
+import { TitleBar } from "./components/TitleBar";
 
 // Lazy load heavy components
 const ImageEditor = lazy(() => import("./components/ImageEditor").then(m => ({ default: m.ImageEditor })));
@@ -425,15 +426,10 @@ function App() {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       if (errorMessage.includes("cancelled") || errorMessage.includes("was cancelled")) {
-        // Only restore window if not in auto-apply mode
-        if (!shouldAutoApply) {
-          await restoreWindow();
-        }
+        await restoreWindow();
       } else if (errorMessage.includes("already in progress")) {
         setError("Please wait for the current screenshot to complete");
-        if (!shouldAutoApply) {
-          await restoreWindow();
-        }
+        await restoreWindow();
       } else if (
         errorMessage.toLowerCase().includes("permission") ||
         errorMessage.toLowerCase().includes("access") ||
@@ -442,13 +438,10 @@ function App() {
         setError(
           "Screen Recording permission required. Please go to System Settings > Privacy & Security > Screen Recording and enable access for FrameXShot, then restart the app."
         );
-        // Always show window for permission errors so user can see the message
         await restoreWindow();
       } else {
         setError(errorMessage);
-        if (!shouldAutoApply) {
-          await restoreWindow();
-        }
+        await restoreWindow();
       }
     } finally {
       setIsCapturing(false);
@@ -662,8 +655,8 @@ function App() {
       });
 
       editorActions.reset();
-      setMode("main");
       setTempScreenshotPath(null);
+      setMode("main");
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage);
@@ -672,14 +665,15 @@ function App() {
         duration: 5000,
       });
       editorActions.reset();
+      setTempScreenshotPath(null);
       setMode("main");
     }
   }
 
   async function handleEditorCancel() {
     editorActions.reset();
-    setMode("main");
     setTempScreenshotPath(null);
+    setMode("main");
   }
 
   // Get shortcut display for a specific action
@@ -694,8 +688,9 @@ function App() {
   };
 
   return (
-    <div className="flex flex-col h-dvh overflow-hidden bg-background">
-      {/* Editor — always mounted when path exists, only visible in editing mode */}
+    <div className="flex flex-col h-dvh overflow-hidden bg-canvas">
+      <TitleBar />
+      {/* Editor — mounted when mode is editing and screenshot path exists */}
       <div className={mode === "editing" ? "flex flex-1 overflow-hidden" : "hidden"}>
         {tempScreenshotPath && (
           <Suspense fallback={<LoadingFallback />}>

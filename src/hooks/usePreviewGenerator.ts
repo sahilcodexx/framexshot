@@ -577,14 +577,26 @@ export function usePreviewGenerator({
       ctx.imageSmoothingQuality = "high";
       ctx.drawImage(rendered, 0, 0, canvas.width, canvas.height);
 
-      if (previewUrlRef.current) {
-        URL.revokeObjectURL(previewUrlRef.current);
-        previewUrlRef.current = null;
-      }
-      const url = canvas.toDataURL("image/jpeg", 0.80);
-      previewUrlRef.current = url;
-      setPreviewUrl(url);
-      setIsGenerating(false);
+      canvas.toBlob(
+        (blob) => {
+          if (currentRenderId !== renderIdRef.current) return;
+          if (!blob) {
+            setError("Failed to create preview blob");
+            setIsGenerating(false);
+            return;
+          }
+          if (previewUrlRef.current) {
+            URL.revokeObjectURL(previewUrlRef.current);
+            previewUrlRef.current = null;
+          }
+          const url = URL.createObjectURL(blob);
+          previewUrlRef.current = url;
+          setPreviewUrl(url);
+          setIsGenerating(false);
+        },
+        "image/jpeg",
+        0.80
+      );
     } catch (err) {
       if (currentRenderId === renderIdRef.current) {
         const message = err instanceof Error ? err.message : String(err);
@@ -658,11 +670,13 @@ export function usePreviewGenerator({
     generatePreview,
   ]);
 
-  // Cleanup preview URL on unmount
+  // Cleanup preview URL on unmount and invalidate in-flight render callbacks
   useEffect(() => {
     return () => {
+      renderIdRef.current++;
       if (previewUrlRef.current) {
         URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
       }
     };
   }, []);

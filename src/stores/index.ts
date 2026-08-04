@@ -28,6 +28,7 @@ export {
   useCanRedo,
   useEditorActions,
   editorActions,
+  usePadding,
   usePaddingTop,
   usePaddingBottom,
   usePaddingLeft,

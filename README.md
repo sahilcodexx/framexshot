@@ -125,11 +125,13 @@ sudo dnf install webkit2gtk4.1-devel libayatana-appindicator-gtk3-devel librsvg2
 #### Clone and build
 
 ```bash
-git clone https://github.com/yourusername/framexshot.git
+git clone https://github.com/sahilcodexx/framexshot.git
 cd framexshot
 
 pnpm install
 pnpm tauri build
+
+# or you can use bun for better JS runtime performance
 ```
 
 The distributable is written to `src-tauri/target/release/bundle/`.

@@ -53,6 +53,37 @@ pub fn file_to_data_uri(path: &str) -> AppResult<String> {
     Ok(format!("data:{};base64,{}", mime, b64))
 }
 
+/// Cleanup temporary screenshot files in system temp directory on startup
+pub fn cleanup_temp_files() -> AppResult<usize> {
+    let temp_dir = std::env::temp_dir();
+    let mut removed_count = 0;
+    if let Ok(entries) = fs::read_dir(&temp_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    let is_temp_screenshot = (name.starts_with("screenshot_")
+                        || name.starts_with("monitor_")
+                        || name.starts_with("ocr_temp_")
+                        || name.starts_with("shot_")
+                        || name.starts_with("cropped_")
+                        || name.starts_with("rendered_"))
+                        && (name.ends_with(".png")
+                            || name.ends_with(".jpg")
+                            || name.ends_with(".jpeg")
+                            || name.ends_with(".webp"));
+                    if is_temp_screenshot {
+                        if fs::remove_file(&path).is_ok() {
+                            removed_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(removed_count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,4 +139,23 @@ mod tests {
         // Cleanup
         let _ = std::fs::remove_dir_all(temp_dir.join("framexshot_test"));
     }
+
+    #[test]
+    fn test_cleanup_temp_files() {
+        let temp_dir = std::env::temp_dir();
+        let dummy_screenshot = temp_dir.join("screenshot_test_cleanup_unit.png");
+        let dummy_other = temp_dir.join("other_file_test_cleanup_unit.txt");
+
+        let _ = std::fs::write(&dummy_screenshot, b"dummy png");
+        let _ = std::fs::write(&dummy_other, b"dummy text");
+
+        let result = cleanup_temp_files();
+        assert!(result.is_ok());
+
+        assert!(!dummy_screenshot.exists(), "Temporary screenshot should have been cleaned up");
+        assert!(dummy_other.exists(), "Non-screenshot file should be preserved");
+
+        let _ = std::fs::remove_file(&dummy_other);
+    }
 }
+

@@ -106,7 +106,6 @@ export const AnnotationCanvas = memo(function AnnotationCanvas({
   
   // Local state for drag operation - minimal React state for rendering triggers
   const [imageLoaded, setImageLoaded] = useState(false);
-  const [hoveredHandleId, setHoveredHandleId] = useState<string | null>(null);
 
   // Load image once and cache it
   useEffect(() => {
@@ -492,7 +491,7 @@ export const AnnotationCanvas = memo(function AnnotationCanvas({
     }
     
     handles.forEach((handle) => {
-      const isHovered = hoveredHandleId === handle.id && !activeHandleId;
+      const isHovered = dragStateRef.current.hoveredHandleId === handle.id && !activeHandleId;
       const isActive = activeHandleId === handle.id;
       const isControl = handle.id === "control";
       const isLineOrArrow = annotation.type === "line" || annotation.type === "arrow";
@@ -539,7 +538,7 @@ export const AnnotationCanvas = memo(function AnnotationCanvas({
     });
     
     ctx.restore();
-  }, [getResizeHandles, hoveredHandleId]);
+  }, [getResizeHandles]);
 
   const drawAnnotation = useCallback(
     (ctx: CanvasRenderingContext2D, annotation: Annotation, isSelected: boolean) => {
@@ -689,7 +688,7 @@ export const AnnotationCanvas = memo(function AnnotationCanvas({
         drawAnnotation(ctx, tempAnnotation, false);
       }
     }
-  }, [imageLoaded, selectedAnnotation, selectedTool, drawAnnotation, createAnnotation, hoveredHandleId]);
+  }, [imageLoaded, selectedAnnotation, selectedTool, drawAnnotation, createAnnotation]);
 
   useEffect(() => {
     redraw();
@@ -1069,12 +1068,12 @@ export const AnnotationCanvas = memo(function AnnotationCanvas({
         canvas.style.cursor = getCursorForHandle(handle);
         if (ds.hoveredHandleId !== handle) {
           ds.hoveredHandleId = handle;
-          setHoveredHandleId(handle);
+          redraw();
         }
       } else {
         if (ds.hoveredHandleId !== null) {
           ds.hoveredHandleId = null;
-          setHoveredHandleId(null);
+          redraw();
         }
         if (isPointInAnnotation(point, liveSelected)) {
           canvas.style.cursor = "move";
@@ -1089,11 +1088,11 @@ export const AnnotationCanvas = memo(function AnnotationCanvas({
       canvas.style.cursor = hovered ? "move" : "default";
       if (ds.hoveredHandleId !== null) {
         ds.hoveredHandleId = null;
-        setHoveredHandleId(null);
+        redraw();
       }
     } else if (ds.hoveredHandleId !== null) {
       ds.hoveredHandleId = null;
-      setHoveredHandleId(null);
+      redraw();
     }
   }, [getCanvasCoordinates, selectedTool, selectedAnnotation, applyResize, getHandleAtPoint, isPointInAnnotation, getCursorForHandle, redraw]);
 

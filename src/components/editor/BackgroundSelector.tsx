@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, memo } from "react";
+import { useRef, useCallback, memo } from "react";
 import { Store } from "@tauri-apps/plugin-store";
 import { toast } from "sonner";
 import { Upload } from "lucide-react";
@@ -72,17 +72,7 @@ const GradientButton = memo(function GradientButton({
   isSelected: boolean;
   onSelect: () => void;
 }) {
-  const [thumbSrc, setThumbSrc] = useState<string>(gradient.src);
-
-  useEffect(() => {
-    let isMounted = true;
-    getThumbnailUrl(gradient.src, 140).then((url) => {
-      if (isMounted) setThumbSrc(url);
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, [gradient.src]);
+  const thumbSrc = getThumbnailUrl(gradient.src, 140);
 
   return (
     <button

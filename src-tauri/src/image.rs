@@ -248,46 +248,50 @@ pub fn render_image_with_effects(image_path: &str, settings: RenderSettings) -> 
     let img_rgba = img.to_rgba8();
     let mut final_img = RgbaImage::new(bg_width, bg_height);
 
+    let radius = settings.border_radius;
+    let radius_u32 = radius as u32;
+    let radius_sq = radius * radius;
+
+    let pad_l = settings.padding_left;
+    let pad_t = settings.padding_top;
+    let img_x_max = pad_l + img_width;
+    let img_y_max = pad_t + img_height;
+
+    let top_corner_max = pad_t + radius_u32;
+    let bottom_corner_min = img_y_max.saturating_sub(radius_u32);
+
     for y in 0..bg_height {
+        let is_in_img_y = y >= pad_t && y < img_y_max;
+        let is_corner_y = radius_u32 > 0 && is_in_img_y && (y < top_corner_max || y >= bottom_corner_min);
+        let img_y = if is_in_img_y { y - pad_t } else { 0 };
+
         for x in 0..bg_width {
-            if x >= settings.padding_left
-                && x < settings.padding_left + img_width
-                && y >= settings.padding_top
-                && y < settings.padding_top + img_height
-            {
-                let img_x = x - settings.padding_left;
-                let img_y = y - settings.padding_top;
+            let is_in_img_x = x >= pad_l && x < img_x_max;
 
-                let corner_x = if img_x < settings.border_radius as u32 {
-                    img_x
-                } else if img_x >= img_width.saturating_sub(settings.border_radius as u32) {
-                    img_width - img_x - 1
-                } else {
-                    u32::MAX
-                };
+            if is_in_img_x && is_in_img_y {
+                let img_x = x - pad_l;
 
-                let corner_y = if img_y < settings.border_radius as u32 {
-                    img_y
-                } else if img_y >= img_height.saturating_sub(settings.border_radius as u32) {
-                    img_height - img_y - 1
-                } else {
-                    u32::MAX
-                };
+                if is_corner_y {
+                    let is_left = img_x < radius_u32;
+                    let is_right = img_x >= img_width.saturating_sub(radius_u32);
 
-                let in_corner = corner_x < settings.border_radius as u32
-                    && corner_y < settings.border_radius as u32;
+                    if is_left || is_right {
+                        let is_top = y < top_corner_max;
+                        let corner_x = if is_left { img_x } else { img_width - 1 - img_x };
+                        let corner_y = if is_top { img_y } else { img_height - 1 - img_y };
 
-                if in_corner {
-                    let dist_x = corner_x as f32;
-                    let dist_y = corner_y as f32;
-                    let corner_dist = (dist_x * dist_x + dist_y * dist_y).sqrt();
-
-                    if corner_dist <= settings.border_radius {
+                        let dist_x = corner_x as f32;
+                        let dist_y = corner_y as f32;
+                        if dist_x * dist_x + dist_y * dist_y <= radius_sq {
+                            let pixel = img_rgba.get_pixel(img_x, img_y);
+                            final_img.put_pixel(x, y, *pixel);
+                        } else {
+                            let bg_pixel = background.get_pixel(x, y);
+                            final_img.put_pixel(x, y, *bg_pixel);
+                        }
+                    } else {
                         let pixel = img_rgba.get_pixel(img_x, img_y);
                         final_img.put_pixel(x, y, *pixel);
-                    } else {
-                        let bg_pixel = background.get_pixel(x, y);
-                        final_img.put_pixel(x, y, *bg_pixel);
                     }
                 } else {
                     let pixel = img_rgba.get_pixel(img_x, img_y);
