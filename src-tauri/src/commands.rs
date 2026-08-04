@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::clipboard::{copy_image_to_clipboard, copy_text_to_clipboard};
 use crate::image::{
@@ -124,10 +124,11 @@ pub async fn get_desktop_directory() -> Result<String, String> {
 pub async fn get_temp_directory() -> Result<String, String> {
     let temp_dir = std::env::temp_dir();
     let canonical = temp_dir.canonicalize().unwrap_or(temp_dir);
-    canonical
+    let path_str = canonical
         .to_str()
         .map(|s| s.to_string())
-        .ok_or_else(|| "Failed to convert temp directory path to string".to_string())
+        .ok_or_else(|| "Failed to convert temp directory path to string".to_string())?;
+    Ok(crate::utils::resolve_path(&path_str))
 }
 
 /// Capture screenshot using Linux native tools with interactive region selection.
@@ -742,7 +743,7 @@ pub async fn crop_and_save_region(
     let out = dest_dir.join(&fname);
     cropped.save(&out).map_err(|e| format!("Failed to save: {}", e))?;
 
-    Ok(out.to_string_lossy().to_string())
+    Ok(crate::utils::resolve_path(&out.to_string_lossy()))
 }
 
 // ─── Windows / macOS / Cross-platform Fallbacks ───────────────────────────────────────
@@ -782,6 +783,7 @@ pub async fn native_capture_interactive(
 
     // Show region-selector window
     if let Some(sel) = app_handle.get_webview_window("region-selector") {
+        let _ = sel.emit("reload-selector-screenshot", ());
         let _ = sel.show();
         let _ = sel.set_fullscreen(true);
         let _ = sel.set_focus();
