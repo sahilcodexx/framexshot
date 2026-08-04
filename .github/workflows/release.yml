@@ -15,18 +15,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: ubuntu-22.04
+          - platform: ubuntu-24.04
             args: ''
             arch: 'linux'
           - platform: windows-latest
             args: ''
             arch: 'windows'
-          - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
-            arch: 'silicon'
-          - platform: macos-latest
-            args: '--target x86_64-apple-darwin'
-            arch: 'intel'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -45,10 +39,6 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Add target for macOS Intel
-        if: matrix.args != ''
-        run: rustup target add x86_64-apple-darwin
 
       - name: Install Linux dependencies
         if: contains(matrix.platform, 'ubuntu')
@@ -71,7 +61,7 @@ jobs:
             COMMITS=$(git log "$PREV_TAG".."$TAG_NAME" --oneline --pretty=format:"- %s" --reverse)
           fi
           if [ -z "$COMMITS" ]; then
-            COMMITS="- FrameXShot v1.0.0 initial release"
+            COMMITS="- FrameXShot initial release"
           fi
           echo "notes<<EOF" >> $GITHUB_OUTPUT
           echo "$COMMITS" >> $GITHUB_OUTPUT
@@ -89,7 +79,6 @@ jobs:
             
             - **Linux**: Download `.AppImage`
             - **Windows**: Download `*_x64-setup.exe`
-            - **macOS**: Download `.dmg` (`aarch64` for Apple Silicon, `x64` for Intel)
             
             ## What's New in v1.0.0
             
