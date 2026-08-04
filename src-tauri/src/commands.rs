@@ -142,9 +142,76 @@ pub async fn native_capture_interactive(save_dir: String) -> Result<String, Stri
     let path_str = screenshot_path.to_string_lossy().to_string();
 
     if is_wayland() {
+        // COSMIC / portal-based Wayland: cosmic-screenshot
+        let is_cosmic = std::env::var("XDG_CURRENT_DESKTOP")
+            .map(|v| v.to_lowercase().contains("cosmic"))
+            .unwrap_or(false)
+            || has_binary("cosmic-screenshot");
+
+        if is_cosmic && has_binary("cosmic-screenshot") {
+            let start_time = std::time::SystemTime::now() - std::time::Duration::from_secs(30);
+            let output = Command::new("cosmic-screenshot")
+                .arg("--interactive=true")
+                .arg("--modal=false")
+                .arg("--notify=false")
+                .arg("-s")
+                .arg(&save_dir)
+                .output()
+                .map_err(|e| format!("Failed to run cosmic-screenshot: {}", e))?;
+
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() && std::path::Path::new(&path).exists() {
+                    return Ok(path);
+                }
+                let pictures_dir = dirs::picture_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+                let pictures_screenshots = pictures_dir.join("Screenshots");
+                let search_dirs = vec![
+                    PathBuf::from(&save_dir),
+                    std::env::temp_dir(),
+                    pictures_dir,
+                    pictures_screenshots,
+                ];
+
+                for dir in search_dirs {
+                    if let Ok(entries) = std::fs::read_dir(&dir) {
+                        let mut files: Vec<_> = entries
+                            .flatten()
+                            .filter(|e| {
+                                let is_png = e.path().extension().map(|x| x == "png" || x == "jpg" || x == "jpeg").unwrap_or(false);
+                                let is_new = e.metadata().and_then(|m| m.modified()).map(|m| m >= start_time).unwrap_or(false);
+                                is_png && is_new
+                            })
+                            .collect();
+                        files.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
+                        if let Some(last) = files.last() {
+                            return Ok(last.path().to_string_lossy().into_owned());
+                        }
+                    }
+                }
+
+                if has_binary("wl-paste") {
+                    let clip_out = Command::new("wl-paste")
+                        .arg("-t")
+                        .arg("image/png")
+                        .output();
+
+                    if let Ok(clip) = clip_out {
+                        if clip.status.success() && !clip.stdout.is_empty() {
+                            let filename = generate_filename("screenshot", "png")?;
+                            let screenshot_path = std::path::PathBuf::from(&save_dir).join(&filename);
+                            if std::fs::write(&screenshot_path, &clip.stdout).is_ok() {
+                                return Ok(screenshot_path.to_string_lossy().into_owned());
+                            }
+                        }
+                    }
+                }
+            }
+            return Err("Screenshot was cancelled or failed".to_string());
+        }
+
         // Wayland: grim + slurp
         if has_binary("grim") && has_binary("slurp") {
-            // Get region selection via slurp
             let slurp_output = Command::new("slurp")
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
