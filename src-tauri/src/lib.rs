@@ -11,7 +11,7 @@ use commands::{
     capture_all_monitors, capture_once, capture_region, capture_screen_for_selector, copy_image_file_to_clipboard,
     crop_and_save_region, get_desktop_directory, get_mouse_position, get_temp_directory, move_window_to_active_space,
     native_capture_fullscreen, native_capture_interactive, native_capture_ocr_region,
-    native_capture_window, play_screenshot_sound, read_file_as_base64, render_image_with_effects_rust, save_edited_image,
+    native_capture_window, perform_ocr_on_file, play_screenshot_sound, read_file_as_base64, render_image_with_effects_rust, save_edited_image,
     select_folder_dialog, show_quick_overlay,
 };
 
@@ -117,12 +117,34 @@ pub fn run() {
             let window_clone = window.clone();
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    if let Err(e) = window_clone.hide() {
-                        eprintln!("Failed to hide window: {}", e);
-                    }
+                    let _ = window_clone.hide();
                     api.prevent_close();
                 }
             });
+
+            // Region selector — fullscreen transparent overlay
+            let selector = WebviewWindowBuilder::new(
+                app,
+                "region-selector",
+                WebviewUrl::App("index.html?selector=1".into()),
+            )
+            .title("Select Region")
+            .fullscreen(true)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .visible(false)
+            .build()?;
+
+            let selector_clone = selector.clone();
+            selector.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    let _ = selector_clone.hide();
+                    api.prevent_close();
+                }
+            });
+
 
             // Tray menu
             let open_item = MenuItemBuilder::with_id("open", "Open FrameXShot").build(app)?;
@@ -226,7 +248,8 @@ pub fn run() {
             select_folder_dialog,
             read_file_as_base64,
             capture_screen_for_selector,
-            crop_and_save_region
+            crop_and_save_region,
+            perform_ocr_on_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
