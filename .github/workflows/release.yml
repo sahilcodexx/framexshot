@@ -15,6 +15,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - platform: ubuntu-22.04
+            args: ''
+            arch: 'linux'
+          - platform: windows-latest
+            args: ''
+            arch: 'windows'
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
             arch: 'silicon'
@@ -40,7 +46,13 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: aarch64-apple-darwin,x86_64-apple-darwin,x86_64-unknown-linux-gnu,x86_64-pc-windows-msvc
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libtesseract-dev tesseract-ocr
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -56,7 +68,7 @@ jobs:
             COMMITS=$(git log "$PREV_TAG".."$TAG_NAME" --oneline --pretty=format:"- %s" --reverse)
           fi
           if [ -z "$COMMITS" ]; then
-            COMMITS="- No changes documented"
+            COMMITS="- FrameXShot v1.0.0 initial release"
           fi
           echo "notes<<EOF" >> $GITHUB_OUTPUT
           echo "$COMMITS" >> $GITHUB_OUTPUT
@@ -68,25 +80,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Better Shot ${{ github.ref_name }}'
+          releaseName: 'FrameXShot ${{ github.ref_name }}'
           releaseBody: |
-            ## Downloads
+            ## Downloads & Installation
             
-            | Platform | Architecture | Download |
-            |----------|--------------|----------|
-            | macOS | Apple Silicon (M1/M2/M3) | `bettershot_*_aarch64.dmg` |
-            | macOS | Intel | `bettershot_*_x64.dmg` |
+            - **Linux**: Download `.AppImage` or `.deb`
+            - **Windows**: Download `*_x64-setup.exe`
+            - **macOS**: Download `.dmg` (`aarch64` for Apple Silicon, `x64` for Intel)
             
-            ## Installation
-            
-            1. Download the `.dmg` file for your Mac
-               - **Apple Silicon** (M1, M2, M3, M4, M5): Download the `aarch64` version
-               - **Intel Mac**: Download the `x64` version
-            2. Open the DMG and drag Better Shot to Applications
-            3. Launch Better Shot from Applications
-            4. Grant Screen Recording permission when prompted in System Settings
-            
-            ## What's New
+            ## What's New in v1.0.0
             
             ${{ steps.release_notes.outputs.notes }}
           releaseDraft: true

@@ -12,7 +12,9 @@ use crate::image::{
 };
 use crate::ocr::recognize_text_from_image;
 use crate::screenshot::{capture_all_monitors as capture_monitors, capture_primary_monitor, MonitorShot};
-use crate::utils::{generate_filename, get_desktop_path};
+use crate::utils::{file_to_data_uri, generate_filename, get_desktop_path};
+
+static PENDING_SCREENSHOT_B64: Mutex<Option<String>> = Mutex::new(None);
 
 static SCREENCAPTURE_LOCK: Mutex<()> = Mutex::new(());
 
@@ -576,5 +578,161 @@ pub async fn show_quick_overlay(
     let _ = app.emit("overlay-show-capture", OverlayPayload { path: screenshot_path });
 
     Ok(())
+}
+
+/// Native folder selection dialog command for Linux / macOS / Windows
+#[tauri::command]
+pub async fn select_folder_dialog(default_path: Option<String>) -> Result<Option<String>, String> {
+    // 1. Try zenity --file-selection --directory if available on Linux GTK/GNOME/Hyprland
+    if has_binary("zenity") {
+        let mut cmd = Command::new("zenity");
+        cmd.arg("--file-selection")
+            .arg("--directory")
+            .arg("--title=Select Save Directory");
+
+        if let Some(ref path) = default_path {
+            let trimmed = path.trim();
+            if !trimmed.is_empty() {
+                cmd.arg(format!("--filename={}", trimmed));
+            }
+        }
+
+        if let Ok(output) = cmd.output() {
+            if output.status.success() {
+                let selected = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !selected.is_empty() {
+                    return Ok(Some(selected));
+                }
+            }
+        }
+    }
+
+    // 2. Try kdialog --getexistingdirectory on KDE Plasma
+    if has_binary("kdialog") {
+        let mut cmd = Command::new("kdialog");
+        cmd.arg("--getexistingdirectory");
+
+        if let Some(ref path) = default_path {
+            let trimmed = path.trim();
+            if !trimmed.is_empty() {
+                cmd.arg(trimmed);
+            }
+        }
+
+        if let Ok(output) = cmd.output() {
+            if output.status.success() {
+                let selected = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !selected.is_empty() {
+                    return Ok(Some(selected));
+                }
+            }
+        }
+    }
+
+    // 3. Try python3 / tkinter dialog fallback
+    if has_binary("python3") {
+        let initial_dir_py = default_path
+            .as_ref()
+            .map(|p| format!("initialdir='{}'", p.replace('\'', "\\'")))
+            .unwrap_or_default();
+
+        let script = format!(
+            "import tkinter as tk, sys, os; from tkinter import filedialog; root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True); path = filedialog.askdirectory({}); print(path if path else '')",
+            initial_dir_py
+        );
+
+        if let Ok(output) = Command::new("python3").arg("-c").arg(script).output() {
+            if output.status.success() {
+                let selected = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !selected.is_empty() {
+                    return Ok(Some(selected));
+                }
+            }
+        }
+    }
+
+    Err("No native file dialog binary found (zenity, kdialog, or python3). Please install zenity.".to_string())
+}
+
+/// Read a file and return it as a base64 data URI.
+/// Exposed as a command so the frontend can load arbitrary image files
+/// without going through Tauri's asset protocol on Windows and Linux.
+#[tauri::command]
+pub async fn read_file_as_base64(path: String) -> Result<String, String> {
+    file_to_data_uri(&path)
+}
+
+/// Returns a CLONE of the stored screenshot for the selector overlay to display.
+#[tauri::command]
+pub async fn capture_screen_for_selector(app_handle: AppHandle) -> Result<String, String> {
+    {
+        let lock = PENDING_SCREENSHOT_B64.lock().map_err(|e| format!("Mutex: {}", e))?;
+        if let Some(ref data) = *lock {
+            return Ok(data.clone());
+        }
+    }
+
+    // Fallback if no stored screenshot
+    let _tmp = std::env::temp_dir().to_string_lossy().to_string();
+    let path = capture_primary_monitor(app_handle).await?;
+    let data_uri = file_to_data_uri(&path.to_string_lossy())?;
+    let _ = std::fs::remove_file(&path);
+
+    {
+        let mut lock = PENDING_SCREENSHOT_B64.lock().map_err(|e| format!("Mutex: {}", e))?;
+        *lock = Some(data_uri.clone());
+    }
+
+    Ok(data_uri)
+}
+
+/// Crops the stored screenshot and saves to disk.
+/// Returns a data URI for the editor to display directly.
+#[tauri::command]
+pub async fn crop_and_save_region(
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    save_dir: String,
+) -> Result<String, String> {
+    if width == 0 || height == 0 {
+        return Err("Invalid region: width/height must be > 0".to_string());
+    }
+
+    let data_uri = {
+        let mut lock = PENDING_SCREENSHOT_B64.lock().map_err(|e| format!("Mutex: {}", e))?;
+        lock.take().ok_or("No pending screenshot — call interactive capture first")?
+    };
+
+    use base64::{engine::general_purpose, Engine as _};
+    use crate::utils::ensure_dir;
+
+    let raw = data_uri.splitn(2, ',').nth(1).ok_or("Malformed base64 data URI")?;
+    let bytes = general_purpose::STANDARD.decode(raw).map_err(|e| format!("Base64 decode failed: {}", e))?;
+    let img = image::load_from_memory(&bytes).map_err(|e| format!("Failed to decode image: {}", e))?;
+
+    let iw = img.width();
+    let ih = img.height();
+
+    let cx = (x.max(0) as u32).min(iw.saturating_sub(1));
+    let cy = (y.max(0) as u32).min(ih.saturating_sub(1));
+    let cw = width.min(iw.saturating_sub(cx));
+    let ch = height.min(ih.saturating_sub(cy));
+
+    if cw == 0 || ch == 0 {
+        return Err(format!("Region ({},{} {}x{}) is outside bounds ({}x{})", x, y, width, height, iw, ih));
+    }
+
+    let cropped = img.crop_imm(cx, cy, cw, ch);
+
+    let dest_dir = PathBuf::from(&save_dir);
+    ensure_dir(&dest_dir)?;
+    let fname = generate_filename("screenshot", "png")?;
+    let out = dest_dir.join(&fname);
+    cropped.save(&out).map_err(|e| format!("Failed to save: {}", e))?;
+
+    let cropped_bytes = std::fs::read(&out).map_err(|e| format!("Failed to read saved crop: {}", e))?;
+    Ok(format!("data:image/png;base64,{}", general_purpose::STANDARD.encode(&cropped_bytes)))
 }
 

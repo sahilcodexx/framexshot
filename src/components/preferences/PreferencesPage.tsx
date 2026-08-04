@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Store } from "@tauri-apps/plugin-store";
-import { ArrowLeft, Folder, Sliders, Image as ImageIcon, Keyboard, Info, Loader2, Check, Sparkles } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { ArrowLeft, Folder, FolderOpen, Sliders, Image as ImageIcon, Keyboard, Info, Loader2, Check, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -87,6 +88,21 @@ export function PreferencesPage({ onBack, onSettingsChange }: PreferencesPagePro
     [onSettingsChange]
   );
 
+  const handleBrowseFolder = useCallback(async () => {
+    try {
+      const selectedPath = await invoke<string | null>("select_folder_dialog", {
+        defaultPath: settings.saveDir,
+      });
+      if (selectedPath) {
+        updateSetting("saveDir", selectedPath);
+        toast.success("Save directory updated");
+      }
+    } catch (err) {
+      console.error("Failed to open folder picker:", err);
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  }, [settings.saveDir, updateSetting]);
+
   if (isLoading) {
     return (
       <main className="h-full flex items-center justify-center bg-canvas text-foreground">
@@ -159,7 +175,7 @@ export function PreferencesPage({ onBack, onSettingsChange }: PreferencesPagePro
 
         {/* Sidebar Footer Info */}
         <div className="pt-4 border-t border-border/30 px-2 text-[11px] text-muted-foreground flex items-center justify-between">
-          <span>BetterShot OS</span>
+          <span>FrameXShot OS</span>
           <span className="font-mono text-[10px] text-muted-foreground/70">v{__APP_VERSION__}</span>
         </div>
       </aside>
@@ -205,6 +221,15 @@ export function PreferencesPage({ onBack, onSettingsChange }: PreferencesPagePro
                       placeholder="Enter path (e.g. ~/Desktop or /home/user/Pictures)"
                       className="flex-1 px-3 py-2 bg-secondary border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent font-mono text-xs transition-colors"
                     />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleBrowseFolder}
+                      className="rounded-xl px-3.5 text-xs font-medium flex items-center gap-1.5 bg-[#262626] text-white hover:bg-[#333333] shrink-0"
+                    >
+                      <FolderOpen className="size-3.5 text-accent" />
+                      Browse Folder
+                    </Button>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
                     Captured screenshots will automatically save to this directory location.

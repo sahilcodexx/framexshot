@@ -151,6 +151,7 @@ function App() {
   const [tempScreenshotPath, setTempScreenshotPath] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [shortcuts, setShortcuts] = useState<KeyboardShortcut[]>(DEFAULT_SHORTCUTS);
+  const [enableGlobalHotkeys, setEnableGlobalHotkeys] = useState<boolean>(true);
   const [settingsVersion, setSettingsVersion] = useState(0);
   const [tempDir, setTempDir] = useState<string>("/tmp");
 
@@ -171,6 +172,7 @@ function App() {
         defaults: {
           copyToClipboard: true,
           autoApplyBackground: false,
+          enableGlobalHotkeys: true,
         },
         autoSave: true,
       });
@@ -183,6 +185,11 @@ function App() {
       const savedAutoApply = await store.get<boolean>("autoApplyBackground");
       if (savedAutoApply !== null && savedAutoApply !== undefined) {
         setAutoApplyBackground(savedAutoApply);
+      }
+
+      const savedGlobalToggle = await store.get<boolean>("enableGlobalHotkeys");
+      if (savedGlobalToggle !== null && savedGlobalToggle !== undefined) {
+        setEnableGlobalHotkeys(savedGlobalToggle);
       }
 
       const savedSaveDir = await store.get<string>("saveDir");
@@ -293,7 +300,7 @@ function App() {
     }
 
     // DEV ONLY: Uncomment to test editor with any image file
-    // setTempScreenshotPath("/Users/montimage/Desktop/bettershot_1768263844426.png");
+    // setTempScreenshotPath("/Users/montimage/Desktop/framexshot_1768263844426.png");
     // setMode("editing");
   }, []);
 
@@ -460,6 +467,14 @@ function App() {
 
     const setupHotkeys = async () => {
       try {
+        if (!enableGlobalHotkeys) {
+          try {
+            await unregisterAll();
+          } catch {}
+          registeredShortcutsRef.current.clear();
+          return;
+        }
+
         try {
           await unregisterAll();
         } catch {
@@ -533,7 +548,7 @@ function App() {
       }
       registeredShortcutsRef.current.clear();
     };
-  }, [shortcuts, settingsVersion]);
+  }, [shortcuts, enableGlobalHotkeys, settingsVersion]);
 
   useEffect(() => {
     let unlisten1: (() => void) | null = null;

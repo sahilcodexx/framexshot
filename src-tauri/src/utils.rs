@@ -38,6 +38,21 @@ pub fn generate_filename_with_id(prefix: &str, id: u32, extension: &str) -> AppR
     Ok(format!("{}_{}_{}.{}", prefix, id, timestamp, extension))
 }
 
+/// Helper: Convert an image file on disk into a base64 data URI (data:image/png;base64,...)
+pub fn file_to_data_uri(path: &str) -> AppResult<String> {
+    use base64::{engine::general_purpose, Engine as _};
+    let bytes = std::fs::read(path).map_err(|e| format!("Failed to read image file: {}", e))?;
+    let b64 = general_purpose::STANDARD.encode(&bytes);
+    let mime = if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if path.ends_with(".webp") {
+        "image/webp"
+    } else {
+        "image/png"
+    };
+    Ok(format!("data:{};base64,{}", mime, b64))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

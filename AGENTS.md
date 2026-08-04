@@ -1,4 +1,4 @@
-# BetterShot — Full Agent Context
+# FrameXShot — Full Agent Context
 
 ## Project Overview
 
@@ -9,7 +9,7 @@ edits them (annotations, backgrounds, effects), and saves to disk or copies to c
 ### Directory Layout
 
 ```
-bettershot-linux-main/
+framexshot/
 ├── src/
 │   ├── App.tsx                    # Root component — router, event listeners, capture flow
 │   ├── main.tsx                   # React entry point

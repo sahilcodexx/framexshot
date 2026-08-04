@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Store } from "@tauri-apps/plugin-store";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 export interface KeyboardShortcut {
@@ -99,15 +100,21 @@ export function KeyboardShortcutManager({ onShortcutsChange }: KeyboardShortcutM
   const [isRecording, setIsRecording] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [recordedShortcut, setRecordedShortcut] = useState<string | null>(null);
+  const [enableGlobalHotkeys, setEnableGlobalHotkeys] = useState<boolean>(true);
   const recordedShortcutRef = useRef<string | null>(null);
   const recordingRef = useRef<HTMLButtonElement>(null);
 
-  // Load shortcuts on mount
+  // Load shortcuts & global hotkeys toggle on mount
   useEffect(() => {
     const loadShortcuts = async () => {
       try {
         const store = await Store.load("settings.json");
         const savedShortcuts = await store.get<KeyboardShortcut[]>("keyboardShortcuts");
+        const savedGlobalToggle = await store.get<boolean>("enableGlobalHotkeys");
+
+        if (savedGlobalToggle !== null && savedGlobalToggle !== undefined) {
+          setEnableGlobalHotkeys(savedGlobalToggle);
+        }
 
         if (savedShortcuts && Array.isArray(savedShortcuts)) {
           const mergedShortcuts = DEFAULT_SHORTCUTS.map((defaultShortcut) => {
@@ -126,6 +133,18 @@ export function KeyboardShortcutManager({ onShortcutsChange }: KeyboardShortcutM
       }
     };
     loadShortcuts();
+  }, []);
+
+  const handleToggleGlobalHotkeys = useCallback(async (checked: boolean) => {
+    setEnableGlobalHotkeys(checked);
+    try {
+      const store = await Store.load("settings.json");
+      await store.set("enableGlobalHotkeys", checked);
+      await store.save();
+      toast.success(checked ? "App global hotkeys enabled" : "Global hotkeys disabled (Xwayland grab released)");
+    } catch (err) {
+      console.error("Failed to save global hotkey toggle:", err);
+    }
   }, []);
 
   // Keyboard recording effect
@@ -248,9 +267,42 @@ export function KeyboardShortcutManager({ onShortcutsChange }: KeyboardShortcutM
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      {/* Global Hotkeys Master Switch */}
+      <div className="p-3.5 bg-card border border-border rounded-xl space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <span className="text-xs font-semibold text-white">App Global Hotkeys</span>
+            <p className="text-[11px] text-muted-foreground">
+              {enableGlobalHotkeys
+                ? "Listening for global key combinations"
+                : "Disabled — Xwayland keyboard grab released for Hyprland/Wayland"}
+            </p>
+          </div>
+          <Switch
+            checked={enableGlobalHotkeys}
+            onCheckedChange={handleToggleGlobalHotkeys}
+            aria-label="Toggle App Global Hotkeys"
+          />
+        </div>
+
+        {/* Hyprland / Wayland Native Binding Hint */}
+        <div className="p-2.5 bg-[#1a1f26] border border-[#2a3442] rounded-lg text-[11px] text-[#93c5fd] flex items-start gap-2 mt-2">
+          <Terminal className="size-4 text-[#60a5fa] shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-medium text-[#bfdbfe]">Hyprland / Wayland Binds:</p>
+            <p className="text-[#93c5fd]/90 font-mono text-[10px] bg-[#0f172a] px-2 py-1 rounded border border-[#1e293b]">
+              bind = $mainMod SHIFT, 2, exec, framexshot --capture-region
+            </p>
+            <p className="text-[#93c5fd]/80 text-[10px]">
+              If Hyprland keybinds stop when opening FrameXShot, turn off "App Global Hotkeys" above to prevent Xwayland grabs, and add <code className="bg-[#0f172a] px-1 py-0.5 rounded font-mono">framexshot --capture-region</code> directly to hyprland.conf!
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between pt-2">
         <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          Global Shortcuts
+          Shortcut Bindings
         </span>
         <Button
           type="button"

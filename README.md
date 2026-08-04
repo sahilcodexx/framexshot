@@ -186,7 +186,7 @@ For lightning-fast captures without touching the editor:
 This repo contains:
 
 - **Desktop app** (Tauri + Vite) — repo root
-- **Landing site** (Next.js) — `bettershot-landing/` *(legacy, rename in progress)*
+- **Landing site** (Next.js) — `framexshot-landing/` *(legacy, rename in progress)*
 
 ### Desktop app
 
