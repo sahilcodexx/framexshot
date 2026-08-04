@@ -218,7 +218,7 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
       setLoadError(`Failed to load image from: ${imagePath}`);
     };
 
-    const assetUrl = convertFileSrc(imagePath);
+    const assetUrl = imagePath.startsWith("data:") ? imagePath : convertFileSrc(imagePath);
     img.crossOrigin = "anonymous";
     img.src = assetUrl;
 

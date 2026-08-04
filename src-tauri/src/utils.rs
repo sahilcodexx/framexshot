@@ -109,3 +109,50 @@ mod tests {
         let _ = std::fs::remove_dir_all(temp_dir.join("framexshot_test"));
     }
 }
+
+/// Resolve a Windows path to its long form and strip any \\?\ prefix.
+/// On non-Windows this is a no-op.
+pub fn resolve_path(path: &str) -> String {
+    #[cfg(target_os = "windows")]
+    {
+        use std::ffi::OsStr;
+        use std::ffi::OsString;
+        use std::os::windows::ffi::OsStrExt;
+        use std::os::windows::ffi::OsStringExt;
+
+        let cleaned = if path.starts_with(r"\\?\") {
+            &path[4..]
+        } else if path.starts_with(r"//?/") {
+            &path[4..]
+        } else {
+            path
+        };
+
+        let wide: Vec<u16> = OsStr::new(cleaned)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        let mut buf = vec![0u16; 32768];
+        let len = unsafe {
+            winapi::um::fileapi::GetLongPathNameW(
+                wide.as_ptr(),
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+            )
+        };
+
+        if len > 0 && len < buf.len() as u32 {
+            let long = OsString::from_wide(&buf[..len as usize]);
+            return long.to_string_lossy().into_owned();
+        }
+
+        cleaned.to_string()
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        path.to_string()
+    }
+}
+

@@ -159,6 +159,7 @@ function App() {
   const settingsRef = useRef({ autoApplyBackground, saveDir, copyToClipboard, tempDir });
   const registeredShortcutsRef = useRef<Set<string>>(new Set());
   const lastCaptureTimeRef = useRef(0);
+  const activeCaptureModeRef = useRef<CaptureMode>("region");
   
   // Keep ref in sync with state
   useEffect(() => {
@@ -316,6 +317,7 @@ function App() {
     
     setIsCapturing(true);
     setError(null);
+    activeCaptureModeRef.current = captureMode;
 
     const appWindow = getCurrentWindow();
     
@@ -328,9 +330,13 @@ function App() {
 
       if (captureMode === "ocr") {
         try {
-          const recognizedText = await invoke<string>("native_capture_ocr_region", {
-            saveDir: currentTempDir,
+          const res = await invoke<string>("native_capture_ocr_region", {
+            saveDir: currentTempDir || currentSaveDir,
           });
+          if (res === "REGION_SELECTOR_OPENED" || res === "ok") {
+            return;
+          }
+          const recognizedText = res;
 
           toast.success("Text copied to clipboard!", {
             description: recognizedText.length > 50 ? `${recognizedText.substring(0, 50)}...` : recognizedText,
@@ -354,13 +360,22 @@ function App() {
               "Screen Recording permission required. Please go to System Settings > Privacy & Security > Screen Recording and enable access for FrameXShot, then restart the app."
             );
             await restoreWindow();
+          } else if (
+            errorMessage.toLowerCase().includes("tesseract") ||
+            errorMessage.toLowerCase().includes("program not found")
+          ) {
+            toast.error("Tesseract OCR not installed", {
+              description: "Install Tesseract from https://github.com/UB-Mannheim/tesseract/wiki and add it to your PATH, then restart the app.",
+              duration: 8000,
+            });
+            await restoreWindow();
           } else {
             setError(errorMessage);
             toast.error("OCR failed", {
               description: errorMessage,
               duration: 5000,
             });
-            await appWindow.hide();
+            await restoreWindow();
           }
         } finally {
           setIsCapturing(false);
@@ -368,8 +383,80 @@ function App() {
         return;
       }
 
-      const commandMap: Record<Exclude<CaptureMode, "ocr">, string> = {
-        region: "native_capture_interactive",
+      // ─── Region capture: special path for Windows/macOS ──────────────────
+      // On Linux, native_capture_interactive handles everything and returns a file path.
+      // On Windows/macOS, it captures the full screen to a static, shows the region-selector
+      // window, and returns "ok". The actual crop + editor load happens later via the
+      // "region-selected" event listener (lines 611+). So we must early-return here.
+      if (captureMode === "region") {
+        const result = await invoke<string>("native_capture_interactive", {
+          saveDir: currentTempDir || currentSaveDir,
+        });
+
+        // If the result is a file path (Linux), process it normally
+        if (result !== "ok") {
+          const screenshotPath = result;
+          let mouseX: number | undefined;
+          let mouseY: number | undefined;
+          try {
+            const [x, y] = await invoke<[number, number]>("get_mouse_position");
+            mouseX = x;
+            mouseY = y;
+          } catch {}
+
+          invoke("play_screenshot_sound").catch(console.error);
+
+          if (shouldAutoApply) {
+            try {
+              const processedImageData =
+                await processScreenshotWithDefaultBackground(screenshotPath);
+
+              const savedPath = await invoke<string>("save_edited_image", {
+                imageData: processedImageData,
+                saveDir: currentSaveDir,
+                copyToClip: shouldCopyToClipboard,
+              });
+
+              await appWindow.hide();
+              await showQuickOverlay(savedPath, mouseX, mouseY);
+            } catch (err) {
+              const errorMessage = err instanceof Error ? err.message : String(err);
+              setError(`Failed to process screenshot: ${errorMessage}`);
+              await restoreWindow();
+            } finally {
+              setIsCapturing(false);
+            }
+            return;
+          }
+
+          setTempScreenshotPath(screenshotPath);
+          setMode("editing");
+          try {
+            await invoke("move_window_to_active_space");
+          } catch {}
+          await restoreWindowOnScreen(mouseX, mouseY);
+          setIsCapturing(false);
+          return;
+        }
+
+        // result === "ok" means Windows/macOS: region-selector window is now open.
+        // The "region-selected" event listener will handle crop + editor from here.
+        // Make sure the selector window is fullscreen and focused.
+        try {
+          const { getAllWebviewWindows } = await import("@tauri-apps/api/webviewWindow");
+          const allWindows = await getAllWebviewWindows();
+          const selector = allWindows.find((win) => win.label === "region-selector");
+          if (selector) {
+            await selector.setFullscreen(true);
+            await selector.setFocus();
+          }
+        } catch {}
+        // Don't setIsCapturing(false) here — the region-selected listener will do it
+        return;
+      }
+
+      // ─── Fullscreen / Window capture ──────────────────────────────────────
+      const commandMap: Record<Exclude<CaptureMode, "ocr" | "region">, string> = {
         fullscreen: "native_capture_fullscreen",
         window: "native_capture_window",
       };
@@ -559,6 +646,8 @@ function App() {
     let unlisten6: (() => void) | null = null;
     let unlisten7: (() => void) | null = null;
     let unlisten8: (() => void) | null = null;
+    let unlisten9: (() => void) | null = null;
+    let unlisten10: (() => void) | null = null;
     let mounted = true;
 
     const setupListeners = async () => {
@@ -606,6 +695,72 @@ function App() {
           console.error("Failed to show last capture overlay:", error);
         }
       });
+      unlisten9 = await listen<{ x: number; y: number; width: number; height: number }>("region-selected", async (event) => {
+        if (!mounted) return;
+        const { x, y, width, height } = event.payload;
+        const { autoApplyBackground: shouldAutoApply, saveDir: currentSaveDir, copyToClipboard: shouldCopyToClipboard, tempDir: td } = settingsRef.current;
+        try {
+          const croppedPath = await invoke<string>("crop_and_save_region", {
+            x, y, width, height,
+            saveDir: td || currentSaveDir
+          });
+          invoke("play_screenshot_sound").catch(() => {});
+          
+          if (activeCaptureModeRef.current === "ocr") {
+            try {
+              const recognizedText = await invoke<string>("perform_ocr_on_file", { path: croppedPath });
+              toast.success("Text copied to clipboard!", {
+                description: recognizedText.length > 50 ? `${recognizedText.substring(0, 50)}...` : recognizedText,
+                duration: 3000,
+              });
+              await getCurrentWindow().hide();
+            } catch (err) {
+              const errorMessage = err instanceof Error ? err.message : String(err);
+              setError(`OCR failed: ${errorMessage}`);
+              toast.error("OCR failed", { description: errorMessage, duration: 5000 });
+              await restoreWindow();
+            } finally {
+              setIsCapturing(false);
+            }
+            return;
+          }
+
+          if (shouldAutoApply) {
+            try {
+              const processedImageData = await processScreenshotWithDefaultBackground(croppedPath);
+              const savedPath = await invoke<string>("save_edited_image", {
+                imageData: processedImageData,
+                saveDir: currentSaveDir,
+                copyToClip: shouldCopyToClipboard,
+              });
+              await getCurrentWindow().hide();
+              await showQuickOverlay(savedPath);
+            } catch (err) {
+              const errorMessage = err instanceof Error ? err.message : String(err);
+              setError(`Failed to process screenshot: ${errorMessage}`);
+              await restoreWindow();
+            } finally {
+              setIsCapturing(false);
+            }
+            return;
+          }
+
+          // Restore window FIRST so it's visible when ImageEditor mounts
+          await restoreWindow();
+          setTempScreenshotPath(croppedPath);
+          setMode("editing");
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err));
+          await restoreWindow();
+        } finally {
+          setIsCapturing(false);
+        }
+      });
+      unlisten10 = await listen("region-selection-cancelled", async () => {
+        if (!mounted) return;
+        setIsCapturing(false);
+        await restoreWindow();
+      });
     };
 
     setupListeners();
@@ -620,6 +775,8 @@ function App() {
       unlisten6?.();
       unlisten7?.();
       unlisten8?.();
+      unlisten9?.();
+      unlisten10?.();
     };
   }, []); // Empty dependency array - only run once on mount
 

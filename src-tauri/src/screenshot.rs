@@ -103,3 +103,38 @@ pub async fn capture_primary_monitor(_app_handle: tauri::AppHandle) -> AppResult
 
     Ok(screenshot_path)
 }
+
+/// Capture primary monitor to save_dir (Windows/macOS fallback using xcap)
+#[cfg(not(target_os = "linux"))]
+pub fn capture_primary(save_dir: &str) -> AppResult<String> {
+    use crate::utils::resolve_path;
+
+    let monitors = Monitor::all().map_err(|e| format!("Failed to get monitors: {}", e))?;
+
+    if monitors.is_empty() {
+        return Err("No monitors available".into());
+    }
+
+    let primary = monitors
+        .iter()
+        .find(|m| m.is_primary().unwrap_or(false))
+        .or_else(|| monitors.first())
+        .ok_or("No monitor found")?;
+
+    let save_path = PathBuf::from(save_dir);
+    ensure_dir(&save_path)?;
+
+    let image = primary
+        .capture_image()
+        .map_err(|e| format!("Failed to capture primary monitor: {}", e))?;
+
+    let filename = generate_filename("screenshot", "png")?;
+    let screenshot_path = save_path.join(&filename);
+
+    image
+        .save(&screenshot_path)
+        .map_err(|e| format!("Failed to save screenshot: {}", e))?;
+
+    Ok(resolve_path(&screenshot_path.to_string_lossy()))
+}
+

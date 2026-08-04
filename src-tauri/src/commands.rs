@@ -19,6 +19,7 @@ static PENDING_SCREENSHOT_B64: Mutex<Option<String>> = Mutex::new(None);
 static SCREENCAPTURE_LOCK: Mutex<()> = Mutex::new(());
 
 /// Detect whether we're running under Wayland or X11
+#[cfg(target_os = "linux")]
 fn is_wayland() -> bool {
     std::env::var("WAYLAND_DISPLAY").is_ok()
         || std::env::var("XDG_SESSION_TYPE")
@@ -28,7 +29,8 @@ fn is_wayland() -> bool {
 
 /// Check if a binary is available on PATH
 fn has_binary(name: &str) -> bool {
-    Command::new("which")
+    let cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+    Command::new(cmd)
         .arg(name)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -36,6 +38,7 @@ fn has_binary(name: &str) -> bool {
         .map(|s| s.success())
         .unwrap_or(false)
 }
+
 
 #[tauri::command]
 pub async fn move_window_to_active_space(_app_handle: AppHandle) -> Result<(), String> {
@@ -130,6 +133,7 @@ pub async fn get_temp_directory() -> Result<String, String> {
 /// Capture screenshot using Linux native tools with interactive region selection.
 /// Wayland: uses grim + slurp
 /// X11: uses scrot -s  (fallback: gnome-screenshot -a or spectacle -r)
+#[cfg(target_os = "linux")]
 #[tauri::command]
 pub async fn native_capture_interactive(save_dir: String) -> Result<String, String> {
     let _lock = SCREENCAPTURE_LOCK
@@ -243,6 +247,7 @@ pub async fn native_capture_interactive(save_dir: String) -> Result<String, Stri
 }
 
 /// Capture full screen
+#[cfg(target_os = "linux")]
 #[tauri::command]
 pub async fn native_capture_fullscreen(save_dir: String) -> Result<String, String> {
     let _lock = SCREENCAPTURE_LOCK
@@ -313,6 +318,7 @@ pub async fn native_capture_fullscreen(save_dir: String) -> Result<String, Strin
 }
 
 /// Capture a specific window
+#[cfg(target_os = "linux")]
 #[tauri::command]
 pub async fn native_capture_window(save_dir: String) -> Result<String, String> {
     let _lock = SCREENCAPTURE_LOCK
@@ -346,6 +352,7 @@ pub async fn native_capture_window(save_dir: String) -> Result<String, String> {
 }
 
 /// Play screenshot sound using paplay / aplay
+#[cfg(target_os = "linux")]
 #[tauri::command]
 pub async fn play_screenshot_sound() -> Result<(), String> {
     std::thread::spawn(|| {
@@ -382,6 +389,7 @@ pub async fn play_screenshot_sound() -> Result<(), String> {
 }
 
 /// Get the current mouse cursor position
+#[cfg(target_os = "linux")]
 #[tauri::command]
 pub async fn get_mouse_position() -> Result<(f64, f64), String> {
     // Use xdotool on X11
@@ -413,6 +421,7 @@ pub async fn get_mouse_position() -> Result<(f64, f64), String> {
 }
 
 /// Capture region and perform OCR, copying text to clipboard
+#[cfg(target_os = "linux")]
 #[tauri::command]
 pub async fn native_capture_ocr_region(save_dir: String) -> Result<String, String> {
     let screenshot_path = {
@@ -446,6 +455,7 @@ pub async fn native_capture_ocr_region(save_dir: String) -> Result<String, Strin
 }
 
 /// Inner capture logic (no mutex, called when lock is already held)
+#[cfg(target_os = "linux")]
 fn capture_interactive_inner(path_str: &str) -> Result<String, String> {
     let screenshot_path = PathBuf::from(path_str);
 
@@ -732,7 +742,133 @@ pub async fn crop_and_save_region(
     let out = dest_dir.join(&fname);
     cropped.save(&out).map_err(|e| format!("Failed to save: {}", e))?;
 
-    let cropped_bytes = std::fs::read(&out).map_err(|e| format!("Failed to read saved crop: {}", e))?;
-    Ok(format!("data:image/png;base64,{}", general_purpose::STANDARD.encode(&cropped_bytes)))
+    Ok(out.to_string_lossy().to_string())
 }
+
+// ─── Windows / macOS / Cross-platform Fallbacks ───────────────────────────────────────
+
+/// Capture screenshot using xcap (Windows/macOS fallback)
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub async fn native_capture_interactive(
+    app_handle: AppHandle,
+    _save_dir: String,
+) -> Result<String, String> {
+    let _lock = SCREENCAPTURE_LOCK
+        .lock()
+        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+
+    // Hide all app windows before capture
+    for label in &["main", "quick-overlay"] {
+        if let Some(w) = app_handle.get_webview_window(label) {
+            let _ = w.hide();
+        }
+    }
+    std::thread::sleep(std::time::Duration::from_millis(250));
+
+    // Capture to temp, encode to base64, delete temp file
+    let tmp = std::env::temp_dir();
+    let path = crate::screenshot::capture_primary(&tmp.to_string_lossy())
+        .map_err(|e| format!("Capture failed: {}", e))?;
+    let data_uri = file_to_data_uri(&path)?;
+    let _ = std::fs::remove_file(&path);
+
+    // Store for region-selector display + crop
+    {
+        let mut lock = PENDING_SCREENSHOT_B64.lock()
+            .map_err(|e| format!("Mutex: {}", e))?;
+        *lock = Some(data_uri);
+    }
+
+    // Show region-selector window
+    if let Some(sel) = app_handle.get_webview_window("region-selector") {
+        let _ = sel.show();
+        let _ = sel.set_fullscreen(true);
+        let _ = sel.set_focus();
+    }
+
+    Ok("ok".to_string())
+}
+
+/// Capture full screen (Windows/macOS fallback)
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub async fn native_capture_fullscreen(app_handle: AppHandle, save_dir: String) -> Result<String, String> {
+    let _lock = SCREENCAPTURE_LOCK
+        .lock()
+        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+
+    for label in &["main", "quick-overlay"] {
+        if let Some(w) = app_handle.get_webview_window(label) {
+            let _ = w.hide();
+        }
+    }
+    std::thread::sleep(std::time::Duration::from_millis(250));
+
+    crate::screenshot::capture_primary(&save_dir)
+}
+
+/// Capture a specific window (Windows/macOS fallback)
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub async fn native_capture_window(app_handle: AppHandle, save_dir: String) -> Result<String, String> {
+    let _lock = SCREENCAPTURE_LOCK
+        .lock()
+        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+
+    for label in &["main", "quick-overlay"] {
+        if let Some(w) = app_handle.get_webview_window(label) {
+            let _ = w.hide();
+        }
+    }
+    std::thread::sleep(std::time::Duration::from_millis(250));
+
+    crate::screenshot::capture_primary(&save_dir)
+}
+
+/// Play screenshot sound (Windows/macOS fallback)
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub async fn play_screenshot_sound() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        winapi::um::winuser::MessageBeep(0x00000000);
+    }
+    Ok(())
+}
+
+/// Get the current mouse cursor position (Windows/macOS fallback)
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub async fn get_mouse_position() -> Result<(f64, f64), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut point = winapi::shared::windef::POINT { x: 0, y: 0 };
+        unsafe { winapi::um::winuser::GetCursorPos(&mut point); }
+        return Ok((point.x as f64, point.y as f64));
+    }
+    #[cfg(not(target_os = "windows"))]
+    Ok((0.0, 0.0))
+}
+
+/// Capture region and perform OCR (Windows/macOS fallback)
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub async fn native_capture_ocr_region(app_handle: AppHandle, save_dir: String) -> Result<String, String> {
+    native_capture_interactive(app_handle, save_dir).await?;
+    Ok("REGION_SELECTOR_OPENED".to_string())
+}
+
+/// Perform OCR on a specific image file and copy recognized text to clipboard
+#[tauri::command]
+pub async fn perform_ocr_on_file(path: String) -> Result<String, String> {
+    play_screenshot_sound().await.ok();
+    let recognized_text = recognize_text_from_image(&path)
+        .map_err(|e| format!("OCR failed: {}", e))?;
+    copy_text_to_clipboard(&recognized_text)
+        .map_err(|e| format!("Failed to copy text to clipboard: {}", e))?;
+    let _ = std::fs::remove_file(&path);
+    Ok(recognized_text)
+}
+
 

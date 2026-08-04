@@ -3,19 +3,24 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 import App from "./App";
 import { QuickOverlay } from "./components/overlay/QuickOverlay";
+import { RegionSelector } from "./components/RegionSelector";
 import { Toaster } from "sonner";
 import { CheckCircle2 } from "lucide-react";
 
-type RootKind = "main" | "quick-overlay";
+type RootKind = "main" | "quick-overlay" | "region-selector";
 
 function RootRouter() {
-  const [kind] = useState<RootKind>(() =>
-    window.location.search.includes("overlay=1") ? "quick-overlay" : "main",
-  );
+  const [kind] = useState<RootKind>(() => {
+    if (window.location.search.includes("overlay=1")) return "quick-overlay";
+    if (window.location.search.includes("selector=1")) return "region-selector";
+    return "main";
+  });
 
   const content =
     kind === "quick-overlay" ? (
       <QuickOverlay />
+    ) : kind === "region-selector" ? (
+      <RegionSelector />
     ) : (
       <>
         <App />
