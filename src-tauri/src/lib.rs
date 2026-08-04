@@ -46,8 +46,21 @@ fn show_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Er
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+        if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let _ = show_main_window(app);
+        }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_autostart::init(
@@ -70,6 +83,14 @@ pub fn run() {
             let args: Vec<String> = std::env::args().collect();
             let app_handle = app.handle().clone();
 
+            let is_hidden = args.iter().any(|arg| arg == "--hidden");
+            let is_cli_capture = args.iter().any(|arg| {
+                arg == "--capture-region" || arg == "-r" ||
+                arg == "--capture-screen" || arg == "-s" ||
+                arg == "--capture-window" || arg == "-w" ||
+                arg == "--capture-ocr"    || arg == "-o"
+            });
+
             if args.iter().any(|arg| arg == "--capture-region" || arg == "-r") {
                 let _ = show_main_window(&app_handle);
                 let _ = app_handle.emit("capture-triggered", ());
@@ -84,7 +105,7 @@ pub fn run() {
                 let _ = app_handle.emit("capture-ocr", ());
             }
 
-            // Create main window — hidden initially
+            // Create main window — visible unless --hidden or CLI capture is passed
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                     .title("FrameXShot")
@@ -93,7 +114,7 @@ pub fn run() {
                     .center()
                     .resizable(true)
                     .decorations(false)
-                    .visible(false)
+                    .visible(!is_hidden && !is_cli_capture)
                     .build()?;
 
             let window_clone = window.clone();
