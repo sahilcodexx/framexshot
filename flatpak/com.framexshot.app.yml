@@ -1,0 +1,54 @@
+app-id: com.framexshot.app
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+command: framexshot
+
+# The GNOME 47 runtime bundles libwebkit2gtk-4.1, GTK 3, GLib, etc.
+# so users don't need ANY system library installed — works on every distro.
+
+finish-args:
+  # ── Display ─────────────────────────────────────────────────────────────
+  - --share=ipc
+  - --socket=x11        # X11 / XWayland
+  - --socket=wayland    # native Wayland
+  - --device=dri        # GPU access (WebKit renderer)
+
+  # ── Filesystem ──────────────────────────────────────────────────────────
+  - --filesystem=home          # save screenshots anywhere in home
+  - --filesystem=/tmp          # temp directory for capture pipeline
+
+  # ── D-Bus ───────────────────────────────────────────────────────────────
+  - --socket=session-bus
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher       # tray icon (KDE/wlroots)
+  - --talk-name=org.freedesktop.portal.Desktop      # xdg-desktop-portal
+  - --talk-name=org.freedesktop.portal.FileChooser  # save dialog
+  - --talk-name=org.freedesktop.portal.Screenshot   # screenshot via portal
+  - --system-talk-name=org.freedesktop.login1
+
+  # ── Runtime env ─────────────────────────────────────────────────────────
+  # DMABuf renderer still disabled as a precaution; --device=dri handles GPU.
+  - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
+
+modules:
+  - name: framexshot
+    buildsystem: simple
+    build-commands:
+      - install -Dm755  framexshot   /app/bin/framexshot
+      - install -Dm644  icon-128.png /app/share/icons/hicolor/128x128/apps/com.framexshot.app.png
+      - install -Dm644  icon-32.png  /app/share/icons/hicolor/32x32/apps/com.framexshot.app.png
+      - install -Dm644  com.framexshot.app.desktop /app/share/applications/com.framexshot.app.desktop
+    sources:
+      # Pre-built binary from the CI step above — no in-Flatpak compilation needed.
+      - type: file
+        path: ../src-tauri/target/release/framexshot
+        dest-filename: framexshot
+      - type: file
+        path: ../src-tauri/icons/128x128.png
+        dest-filename: icon-128.png
+      - type: file
+        path: ../src-tauri/icons/32x32.png
+        dest-filename: icon-32.png
+      - type: file
+        path: com.framexshot.app.desktop

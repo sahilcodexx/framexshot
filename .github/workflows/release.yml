@@ -10,6 +10,7 @@ permissions:
   contents: write
 
 jobs:
+  # ── Build AppImage + .deb (Linux) and NSIS installer (Windows) ───────────
   build:
     strategy:
       fail-fast: false
@@ -44,7 +45,10 @@ jobs:
         if: contains(matrix.platform, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libtesseract-dev tesseract-ocr file squashfs-tools libpipewire-0.3-dev libgbm-dev libdrm-dev
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libxdo-dev libtesseract-dev tesseract-ocr \
+            file squashfs-tools libpipewire-0.3-dev libgbm-dev libdrm-dev
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -76,21 +80,115 @@ jobs:
           releaseName: 'FrameXShot ${{ github.ref_name }}'
           releaseBody: |
             ## Downloads & Installation
-            
-            - **Linux**: Download `.AppImage`
-            - **Windows**: Download `*_x64-setup.exe`
-            
-            ## What's New in v1.0.0
-            
+
+            | Platform | Package | Notes |
+            |----------|---------|-------|
+            | **Linux (all distros)** | `.flatpak` | ✅ Recommended — bundles its own WebKit, works everywhere |
+            | **Linux (Ubuntu/Debian)** | `.deb` | installs system deps automatically |
+            | **Linux (other)** | `.AppImage` | requires `libwebkit2gtk-4.1-0` on host |
+            | **Windows** | `*_x64-setup.exe` | standard installer |
+
+            ### Install Flatpak
+            ```sh
+            flatpak install framexshot_${{ github.ref_name }}_amd64.flatpak
+            flatpak run com.framexshot.app
+            ```
+
+            ## What's New
             ${{ steps.release_notes.outputs.notes }}
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
           args: ${{ matrix.args }}
 
-  publish:
+  # ── Build Flatpak bundle (universal Linux — bundles WebKitGTK via GNOME runtime) ──
+  flatpak:
     needs: build
+    runs-on: ubuntu-24.04
+    # Only run on real tag pushes — workflow_dispatch has no release to upload to
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libxdo-dev libtesseract-dev tesseract-ocr \
+            libpipewire-0.3-dev libgbm-dev libdrm-dev \
+            flatpak flatpak-builder
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Build frontend
+        run: pnpm run build
+
+      - name: Build Rust binary
+        # Plain cargo build embeds dist/ via generate_context!() at compile time.
+        # The resulting binary is self-contained (frontend assets baked in).
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml
+
+      # Cache the GNOME SDK/Platform runtimes — first run ~2 GB download, then instant.
+      - name: Cache Flatpak runtimes
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/flatpak
+          key: flatpak-gnome-platform-47-v1
+
+      - name: Install GNOME Flatpak runtime
+        run: |
+          flatpak remote-add --user --if-not-exists flathub \
+            https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user --noninteractive -y flathub \
+            org.gnome.Platform//47 \
+            org.gnome.Sdk//47
+
+      - name: Build Flatpak bundle
+        run: |
+          flatpak-builder \
+            --user \
+            --force-clean \
+            --repo=flatpak-repo \
+            flatpak-build-dir \
+            flatpak/com.framexshot.app.yml
+
+          flatpak build-bundle \
+            --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
+            flatpak-repo \
+            framexshot_${{ github.ref_name }}_amd64.flatpak \
+            com.framexshot.app
+
+      - name: Upload Flatpak to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            framexshot_${{ github.ref_name }}_amd64.flatpak \
+            --clobber
+
+  # ── Publish draft → public release ───────────────────────────────────────
+  publish:
+    needs: [build, flatpak]
     runs-on: ubuntu-latest
+    # Publish if build succeeded AND flatpak either succeeded or was skipped
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      (needs.flatpak.result == 'success' || needs.flatpak.result == 'skipped')
     steps:
       - name: Publish Release
         uses: actions/github-script@v7
@@ -100,10 +198,10 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
             });
-            
+
             const tagName = context.ref.replace('refs/tags/', '');
             const draftRelease = releases.find(r => r.draft && r.tag_name === tagName);
-            
+
             if (draftRelease) {
               await github.rest.repos.updateRelease({
                 owner: context.repo.owner,

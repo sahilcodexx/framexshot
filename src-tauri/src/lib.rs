@@ -48,11 +48,27 @@ fn show_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Er
 pub fn run() {
     #[cfg(target_os = "linux")]
     {
-        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        // Disable DMABuf renderer — prevents blank screen on many Linux GPUs/AppImage
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        // Disable GPU compositing — skip hardware compositing path entirely
+        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        // Disable WebKit subprocess sandbox.
+        // WEBKIT_FORCE_SANDBOX=0 is silently ignored in newer WebKitGTK — the sandbox
+        // stays on and blocks /dev/dri/* access, causing the GPU process to fail.
+        std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1");
+        // Force Mesa software GL renderer.
+        // Even with compositing disabled, WebKit's GPU process still calls
+        // eglGetDisplay(EGL_DEFAULT_DISPLAY) to enumerate capabilities. On systems where
+        // the EGL platform doesn't match (Wayland/X11 mismatch, AppImage namespace, etc.)
+        // this returns EGL_BAD_PARAMETER and the subprocess aborts → blank window.
+        // llvmpipe (CPU Mesa) always succeeds and the UI performance impact is negligible.
+        if std::env::var_os("LIBGL_ALWAYS_SOFTWARE").is_none() {
+            std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
         }
-        if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
-            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        // Prefer X11/XWayland so WebKit uses the GLX EGL path rather than the Wayland
+        // EGL platform, which is less reliable in AppImage/sandboxed contexts.
+        if std::env::var_os("GDK_BACKEND").is_none() {
+            std::env::set_var("GDK_BACKEND", "x11");
         }
     }
 
@@ -82,15 +98,23 @@ pub fn run() {
             // Check CLI arguments for Hyprland / Wayland native keybindings
             let args: Vec<String> = std::env::args().collect();
             let app_handle = app.handle().clone();
-
             let is_hidden = args.iter().any(|arg| arg == "--hidden");
-            let is_cli_capture = args.iter().any(|arg| {
-                arg == "--capture-region" || arg == "-r" ||
-                arg == "--capture-screen" || arg == "-s" ||
-                arg == "--capture-window" || arg == "-w" ||
-                arg == "--capture-ocr"    || arg == "-o"
-            });
 
+            // Create main window FIRST — must exist before we emit events into it.
+            // (PR #3 fix: CLI capture flags were previously processed before window
+            //  creation, causing "no window to receive event" race conditions.)
+            let window =
+                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                    .title("FrameXShot")
+                    .inner_size(1200.0, 800.0)
+                    .min_inner_size(800.0, 600.0)
+                    .center()
+                    .resizable(true)
+                    .decorations(false)
+                    .visible(!is_hidden)
+                    .build()?;
+
+            // Now process CLI capture flags — window exists, events will be received.
             if args.iter().any(|arg| arg == "--capture-region" || arg == "-r") {
                 let _ = show_main_window(&app_handle);
                 let _ = app_handle.emit("capture-triggered", ());
@@ -104,18 +128,6 @@ pub fn run() {
                 let _ = show_main_window(&app_handle);
                 let _ = app_handle.emit("capture-ocr", ());
             }
-
-            // Create main window — visible unless --hidden or CLI capture is passed
-            let window =
-                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                    .title("FrameXShot")
-                    .inner_size(1200.0, 800.0)
-                    .min_inner_size(800.0, 600.0)
-                    .center()
-                    .resizable(true)
-                    .decorations(false)
-                    .visible(!is_hidden && !is_cli_capture)
-                    .build()?;
 
             let window_clone = window.clone();
             window.on_window_event(move |event| {

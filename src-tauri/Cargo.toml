@@ -43,3 +43,14 @@ winapi = { version = "0.3", features = [
     "fileapi",
 ] }
 
+[profile.dev]
+opt-level = 0
+incremental = true
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
+

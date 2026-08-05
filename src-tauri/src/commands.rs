@@ -19,7 +19,6 @@ static PENDING_SCREENSHOT_B64: Mutex<Option<String>> = Mutex::new(None);
 static SCREENCAPTURE_LOCK: Mutex<()> = Mutex::new(());
 
 /// Detect whether we're running under Wayland or X11
-#[cfg(target_os = "linux")]
 fn is_wayland() -> bool {
     std::env::var("WAYLAND_DISPLAY").is_ok()
         || std::env::var("XDG_SESSION_TYPE")
@@ -29,8 +28,7 @@ fn is_wayland() -> bool {
 
 /// Check if a binary is available on PATH
 fn has_binary(name: &str) -> bool {
-    let cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
-    Command::new(cmd)
+    Command::new("which")
         .arg(name)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -38,7 +36,6 @@ fn has_binary(name: &str) -> bool {
         .map(|s| s.success())
         .unwrap_or(false)
 }
-
 
 #[tauri::command]
 pub async fn move_window_to_active_space(_app_handle: AppHandle) -> Result<(), String> {
@@ -48,7 +45,11 @@ pub async fn move_window_to_active_space(_app_handle: AppHandle) -> Result<(), S
 
 #[tauri::command]
 pub async fn copy_image_file_to_clipboard(path: String) -> Result<(), String> {
-    copy_image_to_clipboard(&path).map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        copy_image_to_clipboard(&path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Quick capture of primary monitor
@@ -59,12 +60,16 @@ pub async fn capture_once(
     copy_to_clip: bool,
 ) -> Result<String, String> {
     let screenshot_path = capture_primary_monitor(app_handle).await?;
-    let screenshot_path_str = screenshot_path.to_string_lossy().to_string();
-    let saved_path = copy_screenshot_to_dir(&screenshot_path_str, &save_dir)?;
-    if copy_to_clip {
-        copy_image_to_clipboard(&saved_path)?;
-    }
-    Ok(saved_path)
+    tauri::async_runtime::spawn_blocking(move || {
+        let screenshot_path_str = screenshot_path.to_string_lossy().to_string();
+        let saved_path = copy_screenshot_to_dir(&screenshot_path_str, &save_dir)?;
+        if copy_to_clip {
+            copy_image_to_clipboard(&saved_path)?;
+        }
+        Ok(saved_path)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Capture all monitors with geometry info
@@ -73,7 +78,9 @@ pub async fn capture_all_monitors(
     _app_handle: AppHandle,
     save_dir: String,
 ) -> Result<Vec<MonitorShot>, String> {
-    capture_monitors(&save_dir)
+    tauri::async_runtime::spawn_blocking(move || capture_monitors(&save_dir))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Crop a region from a screenshot
@@ -86,8 +93,12 @@ pub async fn capture_region(
     height: u32,
     save_dir: String,
 ) -> Result<String, String> {
-    let region = CropRegion { x, y, width, height };
-    crop_image(&screenshot_path, region, &save_dir)
+    tauri::async_runtime::spawn_blocking(move || {
+        let region = CropRegion { x, y, width, height };
+        crop_image(&screenshot_path, region, &save_dir)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Render image with effects using Rust (optimized for blur)
@@ -96,7 +107,11 @@ pub async fn render_image_with_effects_rust(
     image_path: String,
     settings: RenderSettings,
 ) -> Result<String, String> {
-    render_image_with_effects(&image_path, settings)
+    tauri::async_runtime::spawn_blocking(move || {
+        render_image_with_effects(&image_path, settings)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Save an edited image from base64 data
@@ -106,11 +121,15 @@ pub async fn save_edited_image(
     save_dir: String,
     copy_to_clip: bool,
 ) -> Result<String, String> {
-    let saved_path = save_base64_image(&image_data, &save_dir, "framexshot")?;
-    if copy_to_clip {
-        copy_image_to_clipboard(&saved_path)?;
-    }
-    Ok(saved_path)
+    tauri::async_runtime::spawn_blocking(move || {
+        let saved_path = save_base64_image(&image_data, &save_dir, "framexshot")?;
+        if copy_to_clip {
+            copy_image_to_clipboard(&saved_path)?;
+        }
+        Ok(saved_path)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get the user's Desktop directory path
@@ -122,66 +141,182 @@ pub async fn get_desktop_directory() -> Result<String, String> {
 /// Get the system temp directory path
 #[tauri::command]
 pub async fn get_temp_directory() -> Result<String, String> {
-    let temp_dir = std::env::temp_dir();
-    let canonical = temp_dir.canonicalize().unwrap_or(temp_dir);
-    canonical
-        .to_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| "Failed to convert temp directory path to string".to_string())
+    tauri::async_runtime::spawn_blocking(|| {
+        let _ = crate::utils::cleanup_temp_files();
+        let temp_dir = std::env::temp_dir();
+        let canonical = temp_dir.canonicalize().unwrap_or(temp_dir);
+        canonical
+            .to_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| "Failed to convert temp directory path to string".to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Capture screenshot using Linux native tools with interactive region selection.
-/// Wayland: uses grim + slurp
-/// X11: uses scrot -s  (fallback: gnome-screenshot -a or spectacle -r)
-#[cfg(target_os = "linux")]
+/// COSMIC: cosmic-screenshot --interactive=true
+/// Sway/Hyprland: grim + slurp
+/// X11: scrot -s  (fallback: gnome-screenshot -a or spectacle -r)
 #[tauri::command]
 pub async fn native_capture_interactive(save_dir: String) -> Result<String, String> {
-    let _lock = SCREENCAPTURE_LOCK
-        .lock()
-        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _lock = SCREENCAPTURE_LOCK
+            .lock()
+            .map_err(|e| format!("Failed to acquire lock: {}", e))?;
 
-    let filename = generate_filename("screenshot", "png")?;
-    let save_path = PathBuf::from(&save_dir);
-    let screenshot_path = save_path.join(&filename);
-    let path_str = screenshot_path.to_string_lossy().to_string();
+        if is_wayland() {
+            // COSMIC / portal-based Wayland: cosmic-screenshot
+            let is_cosmic = std::env::var("XDG_CURRENT_DESKTOP")
+                .map(|v| v.to_lowercase().contains("cosmic"))
+                .unwrap_or(false)
+                || has_binary("cosmic-screenshot");
 
-    if is_wayland() {
-        // Wayland: grim + slurp
-        if has_binary("grim") && has_binary("slurp") {
-            // Get region selection via slurp
-            let slurp_output = Command::new("slurp")
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
-                .map_err(|e| format!("Failed to run slurp: {}", e))?;
+            if is_cosmic && has_binary("cosmic-screenshot") {
+                let start_time = std::time::SystemTime::now() - std::time::Duration::from_secs(30);
+                let output = Command::new("cosmic-screenshot")
+                    .arg("--interactive=true")
+                    .arg("--modal=false")
+                    .arg("--notify=false")
+                    .arg("-s")
+                    .arg(&save_dir)
+                    .output()
+                    .map_err(|e| format!("Failed to run cosmic-screenshot: {}", e))?;
 
-            if !slurp_output.status.success() {
+                if output.status.success() {
+                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !path.is_empty() && std::path::Path::new(&path).exists() {
+                        return Ok(path);
+                    }
+
+                    // 1. Search in save_dir, system temp, user Pictures & Pictures/Screenshots
+                    let pictures_dir = dirs::picture_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+                    let pictures_screenshots = pictures_dir.join("Screenshots");
+                    let search_dirs = vec![
+                        PathBuf::from(&save_dir),
+                        std::env::temp_dir(),
+                        pictures_dir,
+                        pictures_screenshots,
+                    ];
+
+                    for dir in search_dirs {
+                        if let Ok(entries) = std::fs::read_dir(&dir) {
+                            let mut files: Vec<_> = entries
+                                .flatten()
+                                .filter(|e| {
+                                    let is_png = e.path().extension().map(|x| x == "png" || x == "jpg" || x == "jpeg").unwrap_or(false);
+                                    let is_new = e.metadata().and_then(|m| m.modified()).map(|m| m >= start_time).unwrap_or(false);
+                                    is_png && is_new
+                                })
+                                .collect();
+                            files.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
+                            if let Some(last) = files.last() {
+                                return Ok(last.path().to_string_lossy().into_owned());
+                            }
+                        }
+                    }
+
+                    // 2. If cosmic-screenshot interactive mode put the image on the clipboard, extract it to save_dir!
+                    if has_binary("wl-paste") {
+                        let clip_out = Command::new("wl-paste")
+                            .arg("-t")
+                            .arg("image/png")
+                            .output();
+
+                        if let Ok(clip) = clip_out {
+                            if clip.status.success() && !clip.stdout.is_empty() {
+                                let filename = generate_filename("screenshot", "png")?;
+                                let screenshot_path = std::path::PathBuf::from(&save_dir).join(&filename);
+                                if std::fs::write(&screenshot_path, &clip.stdout).is_ok() {
+                                    return Ok(screenshot_path.to_string_lossy().into_owned());
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Return explicitly on COSMIC so it NEVER falls back to grim/slurp
                 return Err("Screenshot was cancelled or failed".to_string());
             }
 
-            let region = String::from_utf8_lossy(&slurp_output.stdout)
-                .trim()
-                .to_string();
+            // Wayland wlroots (sway/hyprland): grim + slurp
+            if has_binary("grim") && has_binary("slurp") {
+                let filename = generate_filename("screenshot", "png")?;
+                let screenshot_path = std::path::PathBuf::from(&save_dir).join(&filename);
+                let path_str = screenshot_path.to_string_lossy().to_string();
 
-            if region.is_empty() {
-                return Err("Screenshot was cancelled or failed".to_string());
+                let slurp_output = Command::new("slurp")
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .map_err(|e| format!("Failed to run slurp: {}", e))?;
+
+                if !slurp_output.status.success() {
+                    return Err("Screenshot was cancelled or failed".to_string());
+                }
+
+                let region = String::from_utf8_lossy(&slurp_output.stdout).trim().to_string();
+                if region.is_empty() {
+                    return Err("Screenshot was cancelled or failed".to_string());
+                }
+
+                let status = Command::new("grim")
+                    .arg("-g")
+                    .arg(&region)
+                    .arg(&path_str)
+                    .status()
+                    .map_err(|e| format!("Failed to run grim: {}", e))?;
+
+                if !status.success() || !screenshot_path.exists() {
+                    return Err("Screenshot failed".to_string());
+                }
+
+                return Ok(path_str);
             }
 
-            let status = Command::new("grim")
-                .arg("-g")
-                .arg(&region)
+            // Wayland fallback: gnome-screenshot
+            if has_binary("gnome-screenshot") {
+                let filename = generate_filename("screenshot", "png")?;
+                let screenshot_path = std::path::PathBuf::from(&save_dir).join(&filename);
+                let path_str = screenshot_path.to_string_lossy().to_string();
+
+                let status = Command::new("gnome-screenshot")
+                    .arg("-a")
+                    .arg("-f")
+                    .arg(&path_str)
+                    .status()
+                    .map_err(|e| format!("Failed to run gnome-screenshot: {}", e))?;
+
+                if !status.success() || !screenshot_path.exists() {
+                    return Err("Screenshot was cancelled or failed".to_string());
+                }
+                return Ok(path_str);
+            }
+
+            return Err(
+                "No supported screenshot tool found for Wayland. Install cosmic-screenshot (COSMIC) or grim+slurp (sway/hyprland)."
+                    .to_string(),
+            );
+        }
+
+        // X11 path
+        let filename = generate_filename("screenshot", "png")?;
+        let screenshot_path = std::path::PathBuf::from(&save_dir).join(&filename);
+        let path_str = screenshot_path.to_string_lossy().to_string();
+
+        if has_binary("scrot") {
+            let status = Command::new("scrot")
+                .arg("-s")
                 .arg(&path_str)
                 .status()
-                .map_err(|e| format!("Failed to run grim: {}", e))?;
+                .map_err(|e| format!("Failed to run scrot: {}", e))?;
 
             if !status.success() || !screenshot_path.exists() {
-                return Err("Screenshot failed".to_string());
+                return Err("Screenshot was cancelled or failed".to_string());
             }
-
             return Ok(path_str);
         }
 
-        // Wayland fallback: gnome-screenshot
         if has_binary("gnome-screenshot") {
             let status = Command::new("gnome-screenshot")
                 .arg("-a")
@@ -196,75 +331,137 @@ pub async fn native_capture_interactive(save_dir: String) -> Result<String, Stri
             return Ok(path_str);
         }
 
-        return Err("No supported screenshot tool found for Wayland. Please install grim and slurp.".to_string());
-    }
+        if has_binary("spectacle") {
+            let status = Command::new("spectacle")
+                .arg("-r")
+                .arg("-b")
+                .arg("-n")
+                .arg("-o")
+                .arg(&path_str)
+                .status()
+                .map_err(|e| format!("Failed to run spectacle: {}", e))?;
 
-    // X11 path
-    if has_binary("scrot") {
-        let status = Command::new("scrot")
-            .arg("-s")
-            .arg(&path_str)
-            .status()
-            .map_err(|e| format!("Failed to run scrot: {}", e))?;
-
-        if !status.success() || !screenshot_path.exists() {
-            return Err("Screenshot was cancelled or failed".to_string());
+            if !status.success() || !screenshot_path.exists() {
+                return Err("Screenshot was cancelled or failed".to_string());
+            }
+            return Ok(path_str);
         }
-        return Ok(path_str);
-    }
 
-    if has_binary("gnome-screenshot") {
-        let status = Command::new("gnome-screenshot")
-            .arg("-a")
-            .arg("-f")
-            .arg(&path_str)
-            .status()
-            .map_err(|e| format!("Failed to run gnome-screenshot: {}", e))?;
-
-        if !status.success() || !screenshot_path.exists() {
-            return Err("Screenshot was cancelled or failed".to_string());
-        }
-        return Ok(path_str);
-    }
-
-    if has_binary("spectacle") {
-        let status = Command::new("spectacle")
-            .arg("-r")
-            .arg("-b")
-            .arg("-n")
-            .arg("-o")
-            .arg(&path_str)
-            .status()
-            .map_err(|e| format!("Failed to run spectacle: {}", e))?;
-
-        if !status.success() || !screenshot_path.exists() {
-            return Err("Screenshot was cancelled or failed".to_string());
-        }
-        return Ok(path_str);
-    }
-
-    Err("No supported screenshot tool found. Please install scrot (X11) or grim+slurp (Wayland).".to_string())
+        Err("No supported screenshot tool found. Please install scrot (X11) or cosmic-screenshot/grim+slurp (Wayland).".to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Capture full screen
-#[cfg(target_os = "linux")]
+/// COSMIC: cosmic-screenshot --interactive=false
+/// Sway/Hyprland: grim
+/// X11: scrot
 #[tauri::command]
 pub async fn native_capture_fullscreen(save_dir: String) -> Result<String, String> {
-    let _lock = SCREENCAPTURE_LOCK
-        .lock()
-        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _lock = SCREENCAPTURE_LOCK
+            .lock()
+            .map_err(|e| format!("Failed to acquire lock: {}", e))?;
 
-    let filename = generate_filename("screenshot", "png")?;
-    let save_path = PathBuf::from(&save_dir);
-    let screenshot_path = save_path.join(&filename);
-    let path_str = screenshot_path.to_string_lossy().to_string();
+        if is_wayland() {
+            // COSMIC portal-based: cosmic-screenshot --interactive=false
+            let is_cosmic = std::env::var("XDG_CURRENT_DESKTOP")
+                .map(|v| v.to_lowercase().contains("cosmic"))
+                .unwrap_or(false)
+                || has_binary("cosmic-screenshot");
 
-    if is_wayland() {
-        if has_binary("grim") {
-            let status = Command::new("grim")
+            if is_cosmic && has_binary("cosmic-screenshot") {
+                let start_time = std::time::SystemTime::now() - std::time::Duration::from_secs(30);
+                let output = Command::new("cosmic-screenshot")
+                    .arg("--interactive=false")
+                    .arg("--notify=false")
+                    .arg("-s")
+                    .arg(&save_dir)
+                    .output()
+                    .map_err(|e| format!("Failed to run cosmic-screenshot: {}", e))?;
+
+                if output.status.success() {
+                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !path.is_empty() && std::path::Path::new(&path).exists() {
+                        return Ok(path);
+                    }
+                    let pictures_dir = dirs::picture_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+                    let pictures_screenshots = pictures_dir.join("Screenshots");
+                    let search_dirs = vec![
+                        PathBuf::from(&save_dir),
+                        std::env::temp_dir(),
+                        pictures_dir,
+                        pictures_screenshots,
+                    ];
+
+                    for dir in search_dirs {
+                        if let Ok(entries) = std::fs::read_dir(&dir) {
+                            let mut files: Vec<_> = entries
+                                .flatten()
+                                .filter(|e| {
+                                    let is_png = e.path().extension().map(|x| x == "png" || x == "jpg" || x == "jpeg").unwrap_or(false);
+                                    let is_new = e.metadata().and_then(|m| m.modified()).map(|m| m >= start_time).unwrap_or(false);
+                                    is_png && is_new
+                                })
+                                .collect();
+                            files.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
+                            if let Some(last) = files.last() {
+                                return Ok(last.path().to_string_lossy().into_owned());
+                            }
+                        }
+                    }
+                }
+                return Err("Screenshot was cancelled or failed".to_string());
+            }
+
+            // wlroots (sway/hyprland): grim
+            if has_binary("grim") {
+                let filename = generate_filename("screenshot", "png")?;
+                let screenshot_path = std::path::PathBuf::from(&save_dir).join(&filename);
+                let path_str = screenshot_path.to_string_lossy().to_string();
+
+                let status = Command::new("grim")
+                    .arg(&path_str)
+                    .status()
+                    .map_err(|e| format!("Failed to run grim: {}", e))?;
+
+                if !status.success() || !screenshot_path.exists() {
+                    return Err("Screenshot failed".to_string());
+                }
+                return Ok(path_str);
+            }
+
+            if has_binary("gnome-screenshot") {
+                let filename = generate_filename("screenshot", "png")?;
+                let screenshot_path = std::path::PathBuf::from(&save_dir).join(&filename);
+                let path_str = screenshot_path.to_string_lossy().to_string();
+
+                let status = Command::new("gnome-screenshot")
+                    .arg("-f")
+                    .arg(&path_str)
+                    .status()
+                    .map_err(|e| format!("Failed to run gnome-screenshot: {}", e))?;
+
+                if !status.success() || !screenshot_path.exists() {
+                    return Err("Screenshot failed".to_string());
+                }
+                return Ok(path_str);
+            }
+
+            return Err("No supported screenshot tool found for Wayland. Install cosmic-screenshot (COSMIC) or grim (sway/hyprland).".to_string());
+        }
+
+        // X11
+        let filename = generate_filename("screenshot", "png")?;
+        let screenshot_path = std::path::PathBuf::from(&save_dir).join(&filename);
+        let path_str = screenshot_path.to_string_lossy().to_string();
+
+        if has_binary("scrot") {
+            let status = Command::new("scrot")
                 .arg(&path_str)
                 .status()
-                .map_err(|e| format!("Failed to run grim: {}", e))?;
+                .map_err(|e| format!("Failed to run scrot: {}", e))?;
 
             if !status.success() || !screenshot_path.exists() {
                 return Err("Screenshot failed".to_string());
@@ -285,74 +482,79 @@ pub async fn native_capture_fullscreen(save_dir: String) -> Result<String, Strin
             return Ok(path_str);
         }
 
-        return Err("No supported screenshot tool found for Wayland. Please install grim.".to_string());
-    }
-
-    // X11
-    if has_binary("scrot") {
-        let status = Command::new("scrot")
-            .arg(&path_str)
-            .status()
-            .map_err(|e| format!("Failed to run scrot: {}", e))?;
-
-        if !status.success() || !screenshot_path.exists() {
-            return Err("Screenshot failed".to_string());
-        }
-        return Ok(path_str);
-    }
-
-    if has_binary("gnome-screenshot") {
-        let status = Command::new("gnome-screenshot")
-            .arg("-f")
-            .arg(&path_str)
-            .status()
-            .map_err(|e| format!("Failed to run gnome-screenshot: {}", e))?;
-
-        if !status.success() || !screenshot_path.exists() {
-            return Err("Screenshot failed".to_string());
-        }
-        return Ok(path_str);
-    }
-
-    Err("No supported screenshot tool found. Please install scrot (X11) or grim (Wayland).".to_string())
+        Err("No supported screenshot tool found. Please install scrot (X11) or cosmic-screenshot/grim (Wayland).".to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Capture a specific window
-#[cfg(target_os = "linux")]
 #[tauri::command]
 pub async fn native_capture_window(save_dir: String) -> Result<String, String> {
-    let _lock = SCREENCAPTURE_LOCK
-        .lock()
-        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
-
-    let filename = generate_filename("screenshot", "png")?;
-    let save_path = PathBuf::from(&save_dir);
-    let screenshot_path = save_path.join(&filename);
-    let path_str = screenshot_path.to_string_lossy().to_string();
-
-    // X11: scrot -s (click to select window)
-    if !is_wayland() && has_binary("scrot") {
-        let status = Command::new("scrot")
-            .arg("-s")
-            .arg(&path_str)
-            .status()
-            .map_err(|e| format!("Failed to run scrot: {}", e))?;
-
-        if !status.success() || !screenshot_path.exists() {
-            return Err("Screenshot was cancelled or failed".to_string());
+    if is_wayland() {
+        if has_binary("cosmic-screenshot") {
+            return native_capture_interactive(save_dir).await;
         }
-        return Ok(path_str);
+
+        if has_binary("gnome-screenshot") {
+            return tauri::async_runtime::spawn_blocking(move || {
+                let _lock = SCREENCAPTURE_LOCK
+                    .lock()
+                    .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+
+                let filename = generate_filename("screenshot", "png")?;
+                let save_path = PathBuf::from(&save_dir);
+                let screenshot_path = save_path.join(&filename);
+                let path_str = screenshot_path.to_string_lossy().to_string();
+
+                let status = Command::new("gnome-screenshot")
+                    .arg("-w")
+                    .arg("-f")
+                    .arg(&path_str)
+                    .status()
+                    .map_err(|e| format!("Failed to run gnome-screenshot: {}", e))?;
+
+                if !status.success() || !screenshot_path.exists() {
+                    return Err("Screenshot was cancelled or failed".to_string());
+                }
+                Ok(path_str)
+            })
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?;
+        }
     }
 
-    // Wayland: no reliable window capture without compositor protocol support
+    if !is_wayland() && has_binary("scrot") {
+        return tauri::async_runtime::spawn_blocking(move || {
+            let _lock = SCREENCAPTURE_LOCK
+                .lock()
+                .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+
+            let filename = generate_filename("screenshot", "png")?;
+            let save_path = PathBuf::from(&save_dir);
+            let screenshot_path = save_path.join(&filename);
+            let path_str = screenshot_path.to_string_lossy().to_string();
+
+            let status = Command::new("scrot")
+                .arg("-u")
+                .arg(&path_str)
+                .status()
+                .map_err(|e| format!("Failed to run scrot: {}", e))?;
+
+            if !status.success() || !screenshot_path.exists() {
+                return Err("Screenshot was cancelled or failed".to_string());
+            }
+            Ok(path_str)
+        })
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?;
+    }
+
     // Fall back to interactive region selection
-    // Drop the lock BEFORE awaiting (std::sync::MutexGuard is not Send)
-    drop(_lock);
     native_capture_interactive(save_dir).await
 }
 
 /// Play screenshot sound using paplay / aplay
-#[cfg(target_os = "linux")]
 #[tauri::command]
 pub async fn play_screenshot_sound() -> Result<(), String> {
     std::thread::spawn(|| {
@@ -389,7 +591,6 @@ pub async fn play_screenshot_sound() -> Result<(), String> {
 }
 
 /// Get the current mouse cursor position
-#[cfg(target_os = "linux")]
 #[tauri::command]
 pub async fn get_mouse_position() -> Result<(f64, f64), String> {
     // Use xdotool on X11
@@ -421,10 +622,9 @@ pub async fn get_mouse_position() -> Result<(f64, f64), String> {
 }
 
 /// Capture region and perform OCR, copying text to clipboard
-#[cfg(target_os = "linux")]
 #[tauri::command]
 pub async fn native_capture_ocr_region(save_dir: String) -> Result<String, String> {
-    let screenshot_path = {
+    let screenshot_path = tauri::async_runtime::spawn_blocking(move || {
         let _lock = SCREENCAPTURE_LOCK
             .lock()
             .map_err(|e| format!("Failed to acquire lock: {}", e))?;
@@ -434,61 +634,115 @@ pub async fn native_capture_ocr_region(save_dir: String) -> Result<String, Strin
         let path = save_path.join(&filename);
         let path_str = path.to_string_lossy().to_string();
 
-        // Reuse interactive capture logic (without the lock, already held)
         let captured = capture_interactive_inner(&path_str)?;
         if !std::path::Path::new(&captured).exists() {
             return Err("Screenshot was cancelled or failed".to_string());
         }
-        captured
-    };
+        Ok::<String, String>(captured)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))??;
 
     play_screenshot_sound().await.ok();
 
-    let recognized_text = recognize_text_from_image(&screenshot_path)
-        .map_err(|e| format!("OCR failed: {}", e))?;
+    let path_clone = screenshot_path.clone();
+    let recognized_text = tauri::async_runtime::spawn_blocking(move || {
+        let recognized_text = recognize_text_from_image(&path_clone)
+            .map_err(|e| format!("OCR failed: {}", e))?;
 
-    copy_text_to_clipboard(&recognized_text)
-        .map_err(|e| format!("Failed to copy text to clipboard: {}", e))?;
+        copy_text_to_clipboard(&recognized_text)
+            .map_err(|e| format!("Failed to copy text to clipboard: {}", e))?;
 
-    let _ = std::fs::remove_file(&screenshot_path);
+        let _ = std::fs::remove_file(&path_clone);
+        Ok::<String, String>(recognized_text)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))??;
+
     Ok(recognized_text)
 }
 
 /// Inner capture logic (no mutex, called when lock is already held)
-#[cfg(target_os = "linux")]
 fn capture_interactive_inner(path_str: &str) -> Result<String, String> {
-    let screenshot_path = PathBuf::from(path_str);
+    let save_dir = std::path::Path::new(path_str)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "/tmp".to_string());
 
-    if is_wayland() && has_binary("grim") && has_binary("slurp") {
-        let slurp_output = Command::new("slurp")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .map_err(|e| format!("Failed to run slurp: {}", e))?;
+    if is_wayland() {
+        // COSMIC portal-based: cosmic-screenshot
+        if has_binary("cosmic-screenshot") {
+            let output = Command::new("cosmic-screenshot")
+                .arg("--interactive=true")
+                .arg("--modal=false")
+                .arg("--notify=false")
+                .arg(format!("--save-dir={}", save_dir))
+                .output()
+                .map_err(|e| format!("Failed to run cosmic-screenshot: {}", e))?;
 
-        if !slurp_output.status.success() {
-            return Err("Screenshot was cancelled or failed".to_string());
+            if output.status.success() {
+                let out_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !out_path.is_empty() && std::path::Path::new(&out_path).exists() {
+                    return Ok(out_path);
+                }
+                // Find most recent PNG in save_dir
+                if let Ok(entries) = std::fs::read_dir(&save_dir) {
+                    let mut files: Vec<_> = entries
+                        .flatten()
+                        .filter(|e| e.path().extension().map(|x| x == "png").unwrap_or(false))
+                        .collect();
+                    files.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
+                    if let Some(last) = files.last() {
+                        return Ok(last.path().to_string_lossy().into_owned());
+                    }
+                }
+                return Err("cosmic-screenshot completed but no file found".to_string());
+            }
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("cancel") || stderr.contains("dismiss") {
+                return Err("Screenshot was cancelled or failed".to_string());
+            }
         }
 
-        let region = String::from_utf8_lossy(&slurp_output.stdout).trim().to_string();
-        if region.is_empty() {
-            return Err("Screenshot was cancelled or failed".to_string());
+        // wlroots (sway/hyprland): grim + slurp
+        if has_binary("grim") && has_binary("slurp") {
+            let screenshot_path = std::path::PathBuf::from(path_str);
+
+            let slurp_output = Command::new("slurp")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .map_err(|e| format!("Failed to run slurp: {}", e))?;
+
+            if !slurp_output.status.success() {
+                return Err("Screenshot was cancelled or failed".to_string());
+            }
+
+            let region = String::from_utf8_lossy(&slurp_output.stdout).trim().to_string();
+            if region.is_empty() {
+                return Err("Screenshot was cancelled or failed".to_string());
+            }
+
+            let status = Command::new("grim")
+                .arg("-g")
+                .arg(&region)
+                .arg(path_str)
+                .status()
+                .map_err(|e| format!("Failed to run grim: {}", e))?;
+
+            if !status.success() || !screenshot_path.exists() {
+                return Err("Screenshot failed".to_string());
+            }
+            return Ok(path_str.to_string());
         }
 
-        let status = Command::new("grim")
-            .arg("-g")
-            .arg(&region)
-            .arg(path_str)
-            .status()
-            .map_err(|e| format!("Failed to run grim: {}", e))?;
-
-        if !status.success() || !screenshot_path.exists() {
-            return Err("Screenshot failed".to_string());
-        }
-        return Ok(path_str.to_string());
+        return Err("No supported screenshot tool found for Wayland. Install cosmic-screenshot (COSMIC) or grim+slurp (sway/hyprland).".to_string());
     }
 
+    // X11: scrot
     if has_binary("scrot") {
+        let screenshot_path = std::path::PathBuf::from(path_str);
+
         let status = Command::new("scrot")
             .arg("-s")
             .arg(path_str)
@@ -593,75 +847,79 @@ pub async fn show_quick_overlay(
 /// Native folder selection dialog command for Linux / macOS / Windows
 #[tauri::command]
 pub async fn select_folder_dialog(default_path: Option<String>) -> Result<Option<String>, String> {
-    // 1. Try zenity --file-selection --directory if available on Linux GTK/GNOME/Hyprland
-    if has_binary("zenity") {
-        let mut cmd = Command::new("zenity");
-        cmd.arg("--file-selection")
-            .arg("--directory")
-            .arg("--title=Select Save Directory");
+    tauri::async_runtime::spawn_blocking(move || {
+        // 1. Try zenity --file-selection --directory if available on Linux GTK/GNOME/Hyprland
+        if has_binary("zenity") {
+            let mut cmd = Command::new("zenity");
+            cmd.arg("--file-selection")
+                .arg("--directory")
+                .arg("--title=Select Save Directory");
 
-        if let Some(ref path) = default_path {
-            let trimmed = path.trim();
-            if !trimmed.is_empty() {
-                cmd.arg(format!("--filename={}", trimmed));
+            if let Some(ref path) = default_path {
+                let trimmed = path.trim();
+                if !trimmed.is_empty() {
+                    cmd.arg(format!("--filename={}", trimmed));
+                }
             }
-        }
 
-        if let Ok(output) = cmd.output() {
-            if output.status.success() {
-                let selected = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !selected.is_empty() {
-                    return Ok(Some(selected));
+            if let Ok(output) = cmd.output() {
+                if output.status.success() {
+                    let selected = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !selected.is_empty() {
+                        return Ok(Some(selected));
+                    }
                 }
             }
         }
-    }
 
-    // 2. Try kdialog --getexistingdirectory on KDE Plasma
-    if has_binary("kdialog") {
-        let mut cmd = Command::new("kdialog");
-        cmd.arg("--getexistingdirectory");
+        // 2. Try kdialog --getexistingdirectory on KDE Plasma
+        if has_binary("kdialog") {
+            let mut cmd = Command::new("kdialog");
+            cmd.arg("--getexistingdirectory");
 
-        if let Some(ref path) = default_path {
-            let trimmed = path.trim();
-            if !trimmed.is_empty() {
-                cmd.arg(trimmed);
+            if let Some(ref path) = default_path {
+                let trimmed = path.trim();
+                if !trimmed.is_empty() {
+                    cmd.arg(trimmed);
+                }
             }
-        }
 
-        if let Ok(output) = cmd.output() {
-            if output.status.success() {
-                let selected = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !selected.is_empty() {
-                    return Ok(Some(selected));
+            if let Ok(output) = cmd.output() {
+                if output.status.success() {
+                    let selected = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !selected.is_empty() {
+                        return Ok(Some(selected));
+                    }
                 }
             }
         }
-    }
 
-    // 3. Try python3 / tkinter dialog fallback
-    if has_binary("python3") {
-        let initial_dir_py = default_path
-            .as_ref()
-            .map(|p| format!("initialdir='{}'", p.replace('\'', "\\'")))
-            .unwrap_or_default();
+        // 3. Try python3 / tkinter dialog fallback
+        if has_binary("python3") {
+            let initial_dir_py = default_path
+                .as_ref()
+                .map(|p| format!("initialdir='{}'", p.replace('\'', "\\'")))
+                .unwrap_or_default();
 
-        let script = format!(
-            "import tkinter as tk, sys, os; from tkinter import filedialog; root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True); path = filedialog.askdirectory({}); print(path if path else '')",
-            initial_dir_py
-        );
+            let script = format!(
+                "import tkinter as tk, sys, os; from tkinter import filedialog; root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True); path = filedialog.askdirectory({}); print(path if path else '')",
+                initial_dir_py
+            );
 
-        if let Ok(output) = Command::new("python3").arg("-c").arg(script).output() {
-            if output.status.success() {
-                let selected = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !selected.is_empty() {
-                    return Ok(Some(selected));
+            if let Ok(output) = Command::new("python3").arg("-c").arg(script).output() {
+                if output.status.success() {
+                    let selected = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !selected.is_empty() {
+                        return Ok(Some(selected));
+                    }
                 }
             }
         }
-    }
 
-    Err("No native file dialog binary found (zenity, kdialog, or python3). Please install zenity.".to_string())
+        Err("No native file dialog binary found (zenity, kdialog, or python3). Please install zenity.".to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Read a file and return it as a base64 data URI.
@@ -669,7 +927,9 @@ pub async fn select_folder_dialog(default_path: Option<String>) -> Result<Option
 /// without going through Tauri's asset protocol on Windows and Linux.
 #[tauri::command]
 pub async fn read_file_as_base64(path: String) -> Result<String, String> {
-    file_to_data_uri(&path)
+    tauri::async_runtime::spawn_blocking(move || file_to_data_uri(&path))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Returns a CLONE of the stored screenshot for the selector overlay to display.
@@ -683,17 +943,20 @@ pub async fn capture_screen_for_selector(app_handle: AppHandle) -> Result<String
     }
 
     // Fallback if no stored screenshot
-    let _tmp = std::env::temp_dir().to_string_lossy().to_string();
     let path = capture_primary_monitor(app_handle).await?;
-    let data_uri = file_to_data_uri(&path.to_string_lossy())?;
-    let _ = std::fs::remove_file(&path);
+    tauri::async_runtime::spawn_blocking(move || {
+        let data_uri = file_to_data_uri(&path.to_string_lossy())?;
+        let _ = std::fs::remove_file(&path);
 
-    {
-        let mut lock = PENDING_SCREENSHOT_B64.lock().map_err(|e| format!("Mutex: {}", e))?;
-        *lock = Some(data_uri.clone());
-    }
+        {
+            let mut lock = PENDING_SCREENSHOT_B64.lock().map_err(|e| format!("Mutex: {}", e))?;
+            *lock = Some(data_uri.clone());
+        }
 
-    Ok(data_uri)
+        Ok(data_uri)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Crops the stored screenshot and saves to disk.
@@ -706,169 +969,71 @@ pub async fn crop_and_save_region(
     height: u32,
     save_dir: String,
 ) -> Result<String, String> {
-    if width == 0 || height == 0 {
-        return Err("Invalid region: width/height must be > 0".to_string());
-    }
-
-    let data_uri = {
-        let mut lock = PENDING_SCREENSHOT_B64.lock().map_err(|e| format!("Mutex: {}", e))?;
-        lock.take().ok_or("No pending screenshot — call interactive capture first")?
-    };
-
-    use base64::{engine::general_purpose, Engine as _};
-    use crate::utils::ensure_dir;
-
-    let raw = data_uri.splitn(2, ',').nth(1).ok_or("Malformed base64 data URI")?;
-    let bytes = general_purpose::STANDARD.decode(raw).map_err(|e| format!("Base64 decode failed: {}", e))?;
-    let img = image::load_from_memory(&bytes).map_err(|e| format!("Failed to decode image: {}", e))?;
-
-    let iw = img.width();
-    let ih = img.height();
-
-    let cx = (x.max(0) as u32).min(iw.saturating_sub(1));
-    let cy = (y.max(0) as u32).min(ih.saturating_sub(1));
-    let cw = width.min(iw.saturating_sub(cx));
-    let ch = height.min(ih.saturating_sub(cy));
-
-    if cw == 0 || ch == 0 {
-        return Err(format!("Region ({},{} {}x{}) is outside bounds ({}x{})", x, y, width, height, iw, ih));
-    }
-
-    let cropped = img.crop_imm(cx, cy, cw, ch);
-
-    let dest_dir = PathBuf::from(&save_dir);
-    ensure_dir(&dest_dir)?;
-    let fname = generate_filename("screenshot", "png")?;
-    let out = dest_dir.join(&fname);
-    cropped.save(&out).map_err(|e| format!("Failed to save: {}", e))?;
-
-    Ok(out.to_string_lossy().to_string())
-}
-
-// ─── Windows / macOS / Cross-platform Fallbacks ───────────────────────────────────────
-
-/// Capture screenshot using xcap (Windows/macOS fallback)
-#[cfg(not(target_os = "linux"))]
-#[tauri::command]
-pub async fn native_capture_interactive(
-    app_handle: AppHandle,
-    _save_dir: String,
-) -> Result<String, String> {
-    let _lock = SCREENCAPTURE_LOCK
-        .lock()
-        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
-
-    // Hide all app windows before capture
-    for label in &["main", "quick-overlay"] {
-        if let Some(w) = app_handle.get_webview_window(label) {
-            let _ = w.hide();
+    tauri::async_runtime::spawn_blocking(move || {
+        if width == 0 || height == 0 {
+            return Err("Invalid region: width/height must be > 0".to_string());
         }
-    }
-    std::thread::sleep(std::time::Duration::from_millis(250));
 
-    // Capture to temp, encode to base64, delete temp file
-    let tmp = std::env::temp_dir();
-    let path = crate::screenshot::capture_primary(&tmp.to_string_lossy())
-        .map_err(|e| format!("Capture failed: {}", e))?;
-    let data_uri = file_to_data_uri(&path)?;
-    let _ = std::fs::remove_file(&path);
+        let data_uri = {
+            let mut lock = PENDING_SCREENSHOT_B64.lock().map_err(|e| format!("Mutex: {}", e))?;
+            lock.take().ok_or("No pending screenshot — call interactive capture first")?
+        };
 
-    // Store for region-selector display + crop
-    {
-        let mut lock = PENDING_SCREENSHOT_B64.lock()
-            .map_err(|e| format!("Mutex: {}", e))?;
-        *lock = Some(data_uri);
-    }
+        use base64::{engine::general_purpose, Engine as _};
+        use crate::utils::ensure_dir;
+        use std::io::Cursor;
 
-    // Show region-selector window
-    if let Some(sel) = app_handle.get_webview_window("region-selector") {
-        let _ = sel.show();
-        let _ = sel.set_fullscreen(true);
-        let _ = sel.set_focus();
-    }
+        let raw = data_uri.splitn(2, ',').nth(1).ok_or("Malformed base64 data URI")?;
+        let bytes = general_purpose::STANDARD.decode(raw).map_err(|e| format!("Base64 decode failed: {}", e))?;
+        let img = image::load_from_memory(&bytes).map_err(|e| format!("Failed to decode image: {}", e))?;
 
-    Ok("ok".to_string())
-}
+        let iw = img.width();
+        let ih = img.height();
 
-/// Capture full screen (Windows/macOS fallback)
-#[cfg(not(target_os = "linux"))]
-#[tauri::command]
-pub async fn native_capture_fullscreen(app_handle: AppHandle, save_dir: String) -> Result<String, String> {
-    let _lock = SCREENCAPTURE_LOCK
-        .lock()
-        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+        let cx = (x.max(0) as u32).min(iw.saturating_sub(1));
+        let cy = (y.max(0) as u32).min(ih.saturating_sub(1));
+        let cw = width.min(iw.saturating_sub(cx));
+        let ch = height.min(ih.saturating_sub(cy));
 
-    for label in &["main", "quick-overlay"] {
-        if let Some(w) = app_handle.get_webview_window(label) {
-            let _ = w.hide();
+        if cw == 0 || ch == 0 {
+            return Err(format!("Region ({},{} {}x{}) is outside bounds ({}x{})", x, y, width, height, iw, ih));
         }
-    }
-    std::thread::sleep(std::time::Duration::from_millis(250));
 
-    crate::screenshot::capture_primary(&save_dir)
+        let cropped = img.crop_imm(cx, cy, cw, ch);
+
+        let dest_dir = PathBuf::from(&save_dir);
+        ensure_dir(&dest_dir)?;
+        let fname = generate_filename("screenshot", "png")?;
+        let out = dest_dir.join(&fname);
+
+        let mut bytes_buf = Vec::new();
+        cropped.write_to(&mut Cursor::new(&mut bytes_buf), image::ImageFormat::Png)
+            .map_err(|e| format!("Failed to encode cropped image: {}", e))?;
+
+        std::fs::write(&out, &bytes_buf).map_err(|e| format!("Failed to save: {}", e))?;
+
+        // Return the file path so App.tsx can pass it to processScreenshotWithDefaultBackground
+        Ok(out.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
-/// Capture a specific window (Windows/macOS fallback)
-#[cfg(not(target_os = "linux"))]
-#[tauri::command]
-pub async fn native_capture_window(app_handle: AppHandle, save_dir: String) -> Result<String, String> {
-    let _lock = SCREENCAPTURE_LOCK
-        .lock()
-        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
-
-    for label in &["main", "quick-overlay"] {
-        if let Some(w) = app_handle.get_webview_window(label) {
-            let _ = w.hide();
-        }
-    }
-    std::thread::sleep(std::time::Duration::from_millis(250));
-
-    crate::screenshot::capture_primary(&save_dir)
-}
-
-/// Play screenshot sound (Windows/macOS fallback)
-#[cfg(not(target_os = "linux"))]
-#[tauri::command]
-pub async fn play_screenshot_sound() -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    unsafe {
-        winapi::um::winuser::MessageBeep(0x00000000);
-    }
-    Ok(())
-}
-
-/// Get the current mouse cursor position (Windows/macOS fallback)
-#[cfg(not(target_os = "linux"))]
-#[tauri::command]
-pub async fn get_mouse_position() -> Result<(f64, f64), String> {
-    #[cfg(target_os = "windows")]
-    {
-        let mut point = winapi::shared::windef::POINT { x: 0, y: 0 };
-        unsafe { winapi::um::winuser::GetCursorPos(&mut point); }
-        return Ok((point.x as f64, point.y as f64));
-    }
-    #[cfg(not(target_os = "windows"))]
-    Ok((0.0, 0.0))
-}
-
-/// Capture region and perform OCR (Windows/macOS fallback)
-#[cfg(not(target_os = "linux"))]
-#[tauri::command]
-pub async fn native_capture_ocr_region(app_handle: AppHandle, save_dir: String) -> Result<String, String> {
-    native_capture_interactive(app_handle, save_dir).await?;
-    Ok("REGION_SELECTOR_OPENED".to_string())
-}
-
-/// Perform OCR on a specific image file and copy recognized text to clipboard
+/// Run OCR on a screenshot file, copy result to clipboard, then delete the temp file.
 #[tauri::command]
 pub async fn perform_ocr_on_file(path: String) -> Result<String, String> {
     play_screenshot_sound().await.ok();
-    let recognized_text = recognize_text_from_image(&path)
-        .map_err(|e| format!("OCR failed: {}", e))?;
-    copy_text_to_clipboard(&recognized_text)
-        .map_err(|e| format!("Failed to copy text to clipboard: {}", e))?;
-    let _ = std::fs::remove_file(&path);
+    let recognized_text = tauri::async_runtime::spawn_blocking(move || {
+        recognize_text_from_image(&path)
+            .map_err(|e| format!("OCR failed: {}", e))
+            .and_then(|text| {
+                copy_text_to_clipboard(&text)
+                    .map_err(|e| format!("Failed to copy text to clipboard: {}", e))?;
+                let _ = std::fs::remove_file(&path);
+                Ok(text)
+            })
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))??;
     Ok(recognized_text)
 }
-
-

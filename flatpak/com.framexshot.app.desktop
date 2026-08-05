@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=FrameXShot
+GenericName=Screenshot Tool
+Comment=Capture, annotate and share screenshots
+Exec=framexshot
+Icon=com.framexshot.app
+Type=Application
+Categories=Graphics;Photography;
+Keywords=screenshot;capture;screen;region;annotate;
+StartupNotify=true

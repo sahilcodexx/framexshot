@@ -53,6 +53,37 @@ pub fn file_to_data_uri(path: &str) -> AppResult<String> {
     Ok(format!("data:{};base64,{}", mime, b64))
 }
 
+/// Cleanup temporary screenshot files in system temp directory on startup
+pub fn cleanup_temp_files() -> AppResult<usize> {
+    let temp_dir = std::env::temp_dir();
+    let mut removed_count = 0;
+    if let Ok(entries) = fs::read_dir(&temp_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    let is_temp_screenshot = (name.starts_with("screenshot_")
+                        || name.starts_with("monitor_")
+                        || name.starts_with("ocr_temp_")
+                        || name.starts_with("shot_")
+                        || name.starts_with("cropped_")
+                        || name.starts_with("rendered_"))
+                        && (name.ends_with(".png")
+                            || name.ends_with(".jpg")
+                            || name.ends_with(".jpeg")
+                            || name.ends_with(".webp"));
+                    if is_temp_screenshot {
+                        if fs::remove_file(&path).is_ok() {
+                            removed_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(removed_count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,51 +139,23 @@ mod tests {
         // Cleanup
         let _ = std::fs::remove_dir_all(temp_dir.join("framexshot_test"));
     }
-}
 
-/// Resolve a Windows path to its long form and strip any \\?\ prefix.
-/// On non-Windows this is a no-op.
-pub fn resolve_path(path: &str) -> String {
-    #[cfg(target_os = "windows")]
-    {
-        use std::ffi::OsStr;
-        use std::ffi::OsString;
-        use std::os::windows::ffi::OsStrExt;
-        use std::os::windows::ffi::OsStringExt;
+    #[test]
+    fn test_cleanup_temp_files() {
+        let temp_dir = std::env::temp_dir();
+        let dummy_screenshot = temp_dir.join("screenshot_test_cleanup_unit.png");
+        let dummy_other = temp_dir.join("other_file_test_cleanup_unit.txt");
 
-        let cleaned = if path.starts_with(r"\\?\") {
-            &path[4..]
-        } else if path.starts_with(r"//?/") {
-            &path[4..]
-        } else {
-            path
-        };
+        let _ = std::fs::write(&dummy_screenshot, b"dummy png");
+        let _ = std::fs::write(&dummy_other, b"dummy text");
 
-        let wide: Vec<u16> = OsStr::new(cleaned)
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect();
+        let result = cleanup_temp_files();
+        assert!(result.is_ok());
 
-        let mut buf = vec![0u16; 32768];
-        let len = unsafe {
-            winapi::um::fileapi::GetLongPathNameW(
-                wide.as_ptr(),
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-            )
-        };
+        assert!(!dummy_screenshot.exists(), "Temporary screenshot should have been cleaned up");
+        assert!(dummy_other.exists(), "Non-screenshot file should be preserved");
 
-        if len > 0 && len < buf.len() as u32 {
-            let long = OsString::from_wide(&buf[..len as usize]);
-            return long.to_string_lossy().into_owned();
-        }
-
-        cleaned.to_string()
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        path.to_string()
+        let _ = std::fs::remove_file(&dummy_other);
     }
 }
 
