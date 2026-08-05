@@ -8,11 +8,12 @@ mod screenshot;
 mod utils;
 
 use commands::{
-    capture_all_monitors, capture_once, capture_region, capture_screen_for_selector, copy_image_file_to_clipboard,
-    crop_and_save_region, get_desktop_directory, get_mouse_position, get_temp_directory, move_window_to_active_space,
+    capture_all_monitors, capture_once, capture_region, capture_screen_for_selector,
+    cleanup_old_screenshots, copy_image_file_to_clipboard, crop_and_save_region,
+    get_desktop_directory, get_mouse_position, get_temp_directory, move_window_to_active_space,
     native_capture_fullscreen, native_capture_interactive, native_capture_ocr_region,
-    native_capture_window, perform_ocr_on_file, play_screenshot_sound, read_file_as_base64, render_image_with_effects_rust, save_edited_image,
-    select_folder_dialog, show_quick_overlay,
+    native_capture_window, perform_ocr_on_file, play_screenshot_sound, read_file_as_base64,
+    render_image_with_effects_rust, save_edited_image, select_folder_dialog, show_quick_overlay,
 };
 
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
@@ -84,7 +85,6 @@ pub fn run() {
             Some(vec!["--hidden"]),
         ))
         .setup(|app| {
-            use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
 
             // Enable autostart by default
             {
@@ -114,7 +114,7 @@ pub fn run() {
                     .visible(!is_hidden)
                     .build()?;
 
-            // Now process CLI capture flags — window exists, events will be received.
+            // Now CLI capture flags - window exists, events will be received.
             if args.iter().any(|arg| arg == "--capture-region" || arg == "-r") {
                 let _ = show_main_window(&app_handle);
                 let _ = app_handle.emit("capture-triggered", ());
@@ -160,8 +160,8 @@ pub fn run() {
                 }
             });
 
-
             // Tray menu
+            use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
             let open_item = MenuItemBuilder::with_id("open", "Open FrameXShot").build(app)?;
             let capture_region_item =
                 MenuItemBuilder::with_id("capture_region", "Capture Region").build(app)?;
@@ -268,7 +268,8 @@ pub fn run() {
             read_file_as_base64,
             capture_screen_for_selector,
             crop_and_save_region,
-            perform_ocr_on_file
+            perform_ocr_on_file,
+            cleanup_old_screenshots
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,4 +1,4 @@
-import { convertFileSrc} from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { Store } from "@tauri-apps/plugin-store";
 import { createHighQualityCanvas } from "./canvas-utils";
 import { resolveBackgroundPath, getDefaultBackgroundPath } from "./asset-registry";
@@ -166,11 +166,18 @@ export async function processScreenshotWithDefaultBackground(
       }
     };
     
-    img.onerror = () => {
-      reject(new Error(`Failed to load image from: ${imagePath}`));
-    };
-
-    const assetUrl = imagePath.startsWith("data:") ? imagePath : convertFileSrc(imagePath);
+    let assetUrl = imagePath;
+    if (!imagePath.startsWith("data:") && !imagePath.startsWith("http:") && !imagePath.startsWith("https:")) {
+      try {
+        assetUrl = await invoke<string>("read_file_as_base64", { path: imagePath });
+      } catch (err) {
+        console.warn("Base64 conversion failed in auto-process, falling back to convertFileSrc:", err);
+        assetUrl = convertFileSrc(imagePath);
+      }
+    }
+    if (assetUrl.startsWith("http") || assetUrl.startsWith("asset:")) {
+      img.crossOrigin = "anonymous";
+    }
     img.src = assetUrl;
   });
 }

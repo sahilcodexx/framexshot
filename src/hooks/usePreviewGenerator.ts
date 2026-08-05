@@ -38,22 +38,41 @@ export async function loadImage(src: string): Promise<HTMLImageElement> {
     return imageCache.get(src)!;
   }
 
+  let finalSrc = src;
+
+  // Convert absolute file system paths or asset protocol URLs to base64 data URIs
+  if (!src.startsWith("data:") && !src.startsWith("http:") && !src.startsWith("https:") && (src.startsWith("/") || src.startsWith("asset:") || src.includes("tmp"))) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      let filePath = src;
+      if (src.startsWith("asset:")) {
+        filePath = decodeURIComponent(src.replace(/^asset:\/\/[^\/]+\//, "/"));
+      }
+      finalSrc = await invoke<string>("read_file_as_base64", { path: filePath });
+    } catch (e) {
+      console.warn("Base64 image conversion failed, falling back to original src:", e);
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
+
+    if (finalSrc.startsWith("http") || finalSrc.startsWith("asset:")) {
+      img.crossOrigin = "anonymous";
+    }
+
     img.onload = () => {
       addToCache(src, img);
       resolve(img);
     };
+
     img.onerror = (event) => {
-      const error = new Error(
-        `Failed to load image: ${src}. This may be due to CORS restrictions, ` +
-        `invalid path, or asset protocol scope issues in production builds.`
-      );
+      const error = new Error(`Failed to load image: ${src}`);
       console.error("Image load error:", { src, event });
       reject(error);
     };
-    img.src = src;
+
+    img.src = finalSrc;
   });
 }
 

@@ -201,30 +201,51 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
       return;
     }
 
-    const img = new Image();
-    img.onload = () => {
-      setScreenshotImage(img);
-      setImageLoaded(true);
+    let isMounted = true;
 
-      // Calculate smart default padding: 10% of average dimension, capped at 400px
-      const avgDimension = (img.width + img.height) / 2;
-      const defaultPadding = Math.min(Math.round(avgDimension * 0.1), 400);
-      actions.setPaddingTopTransient(defaultPadding);
-      actions.setPaddingBottomTransient(defaultPadding);
-      actions.setPaddingLeftTransient(defaultPadding);
-      actions.setPaddingRightTransient(defaultPadding);
-    };
-    img.onerror = () => {
-      setLoadError(`Failed to load image from: ${imagePath}`);
+    const setupImage = async () => {
+      let finalSrc = imagePath;
+      if (!imagePath.startsWith("data:") && !imagePath.startsWith("http:") && !imagePath.startsWith("https:")) {
+        try {
+          finalSrc = await invoke<string>("read_file_as_base64", { path: imagePath });
+        } catch (err) {
+          console.warn("Base64 read failed, falling back to convertFileSrc:", err);
+          finalSrc = convertFileSrc(imagePath);
+        }
+      }
+
+      if (!isMounted) return;
+
+      const img = new Image();
+      if (finalSrc.startsWith("http") || finalSrc.startsWith("asset:")) {
+        img.crossOrigin = "anonymous";
+      }
+
+      img.onload = () => {
+        if (!isMounted) return;
+        setScreenshotImage(img);
+        setImageLoaded(true);
+
+        const avgDimension = (img.width + img.height) / 2;
+        const defaultPadding = Math.min(Math.round(avgDimension * 0.1), 400);
+        actions.setPaddingTopTransient(defaultPadding);
+        actions.setPaddingBottomTransient(defaultPadding);
+        actions.setPaddingLeftTransient(defaultPadding);
+        actions.setPaddingRightTransient(defaultPadding);
+      };
+
+      img.onerror = () => {
+        if (!isMounted) return;
+        setLoadError(`Failed to load image from: ${imagePath}`);
+      };
+
+      img.src = finalSrc;
     };
 
-    const assetUrl = imagePath.startsWith("data:") ? imagePath : convertFileSrc(imagePath);
-    img.crossOrigin = "anonymous";
-    img.src = assetUrl;
+    setupImage();
 
     return () => {
-      img.onload = null;
-      img.onerror = null;
+      isMounted = false;
     };
   }, [imagePath, actions]);
 

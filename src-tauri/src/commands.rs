@@ -142,13 +142,29 @@ pub async fn get_desktop_directory() -> Result<String, String> {
 #[tauri::command]
 pub async fn get_temp_directory() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(|| {
-        let _ = crate::utils::cleanup_temp_files();
+        // NOTE: cleanup_temp_files() is intentionally NOT called here.
+        // It was called on every get_temp_directory invocation, which deleted screenshot_*.png
+        // files that were currently open in the editor, causing 404 "Could not load image" errors.
+        // Cleanup now only happens explicitly via cleanup_old_screenshots command.
         let temp_dir = std::env::temp_dir();
-        let canonical = temp_dir.canonicalize().unwrap_or(temp_dir);
-        canonical
+        // Do NOT canonicalize — canonicalize() on macOS turns /tmp → /private/tmp,
+        // which then doesn't match the /tmp/** asset scope and causes 404s in the editor.
+        // Return the path as-is so it matches what's in tauri.conf.json scope.
+        temp_dir
             .to_str()
             .map(|s| s.to_string())
             .ok_or_else(|| "Failed to convert temp directory path to string".to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// Delete stale screenshot temp files from previous sessions.
+/// Called explicitly at safe points (e.g. after successful save), not on every startup.
+#[tauri::command]
+pub async fn cleanup_old_screenshots() -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        crate::utils::cleanup_temp_files().map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?
