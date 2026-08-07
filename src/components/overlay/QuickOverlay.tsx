@@ -122,6 +122,45 @@ export function QuickOverlay() {
     };
   }, [state.path]);
 
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!state.path) {
+      setDataUrl(null);
+      setImageLoaded(false);
+      setImageError(false);
+      return;
+    }
+
+    if (state.path.startsWith("data:")) {
+      setDataUrl(state.path);
+      setImageLoaded(true);
+      setImageError(false);
+      return;
+    }
+
+    // Bulletproof image loading via Rust read_file_as_base64
+    invoke<string>("read_file_as_base64", { path: state.path })
+      .then((url) => {
+        if (isMounted) {
+          setDataUrl(url);
+          setImageLoaded(true);
+          setImageError(false);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to read image as base64 for overlay:", err);
+        if (isMounted) {
+          setDataUrl(convertFileSrc(state.path!));
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [state.path]);
+
   const handleCopy = useCallback(async () => {
     if (!state.path || isCopying) return;
     setIsCopying(true);
@@ -141,11 +180,7 @@ export function QuickOverlay() {
     }
   }, [state.path, isCopying]);
 
-  const imageSrc = state.path
-    ? state.path.startsWith("data:")
-      ? state.path
-      : convertFileSrc(state.path)
-    : null;
+  const imageSrc = dataUrl || (state.path ? (state.path.startsWith("data:") ? state.path : convertFileSrc(state.path)) : null);
 
   return (
     <main className="h-dvh w-dvw bg-background text-foreground flex flex-col overflow-hidden">
@@ -157,7 +192,7 @@ export function QuickOverlay() {
           className="flex flex-col h-full"
         >
           <div className="relative flex-1 min-h-0 overflow-hidden bg-muted/5">
-            {imageError ? (
+            {imageError && !dataUrl ? (
               <div className="flex size-full items-center justify-center bg-muted/40">
                 <ImageIcon className="size-12 text-muted-foreground" />
               </div>
@@ -166,16 +201,18 @@ export function QuickOverlay() {
                 alt="Latest capture preview"
                 src={imageSrc || undefined}
                 className={`size-full object-contain transition-opacity duration-200 ${
-                  imageLoaded ? "opacity-100" : "opacity-0"
+                  imageLoaded || dataUrl ? "opacity-100" : "opacity-0"
                 }`}
                 onLoad={() => setImageLoaded(true)}
                 onError={() => {
-                  setImageError(true);
-                  setImageLoaded(false);
+                  if (!dataUrl) {
+                    setImageError(true);
+                    setImageLoaded(false);
+                  }
                 }}
               />
             )}
-            {!imageLoaded && !imageError && (
+            {!imageLoaded && !dataUrl && !imageError && (
               <div className="absolute inset-0 flex items-center justify-center bg-muted/20">
                 <div className="size-8 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
               </div>
