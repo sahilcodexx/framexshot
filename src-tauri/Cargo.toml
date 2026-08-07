@@ -1,6 +1,6 @@
 [package]
 name = "framexshot"
-version = "1.0.5"
+version = "1.0.7"
 description = "FrameXShot — Linux screenshot tool"
 authors = ["kartik labhshetwar"]
 edition = "2021"
@@ -13,7 +13,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-arboard = "3"
 base64 = "0.22"
 dirs = "5"
 image = "0.25"
@@ -28,6 +27,9 @@ tauri-plugin-store = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 xcap = "0.8"
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+arboard = "3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3", features = [
