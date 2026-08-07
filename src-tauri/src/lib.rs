@@ -53,9 +53,7 @@ pub fn run() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         // Disable GPU compositing — skip hardware compositing path entirely
         std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-        // Disable WebKit subprocess sandbox.
-        // WEBKIT_FORCE_SANDBOX=0 is silently ignored in newer WebKitGTK — the sandbox
-        // stays on and blocks /dev/dri/* access, causing the GPU process to fail.
+        // Disable WebKit subprocess sandbox for unrestricted Linux rendering & hardware access.
         std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1");
         // Force Mesa software GL renderer.
         // Even with compositing disabled, WebKit's GPU process still calls
