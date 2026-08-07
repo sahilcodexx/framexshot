@@ -37,9 +37,9 @@ modules:
     config-opts:
       - -DWITH_DOC_GEN=OFF
     sources:
-      - type: archive
-        url: https://launchpad.net/libdbusmenu/16.04/16.04.0/+download/libdbusmenu-16.04.0.tar.gz
-        sha256: 198925d68b225c5030282189d20cbe9f4a9b6c1676d1e3dbe75fec60bfd2d148
+      - type: git
+        url: https://github.com/AyatanaIndicators/libdbusmenu-ayatana.git
+        tag: 0.5.90
 
   - name: libayatana-appindicator
     buildsystem: cmake-ninja
