@@ -10,6 +10,7 @@ import { motion } from "motion/react";
 
 type OverlayEventPayload = {
   path: string;
+  data_url?: string | null;
 };
 
 type QuickOverlayState = {
@@ -28,7 +29,7 @@ export function QuickOverlay() {
   const [imageError, setImageError] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const [copied, setCopied] = useState(false);
-   const [isFadingOut, setIsFadingOut] = useState(false);
+  const [isFadingOut, setIsFadingOut] = useState(false);
 
   useEffect(() => {
     const loadInitialState = async () => {
@@ -68,11 +69,17 @@ export function QuickOverlay() {
         "overlay-show-capture",
         (event) => {
           if (!isMounted) return;
-          if (event.payload.path === state.path) {
-            return;
+          
+          if (event.payload.data_url) {
+            setDataUrl(event.payload.data_url);
+            setImageLoaded(true);
+            setImageError(false);
+          } else {
+            setDataUrl(null);
+            setImageLoaded(false);
+            setImageError(false);
           }
-          setImageLoaded(false);
-          setImageError(false);
+
           setState((prev) => ({
             ...prev,
             path: event.payload.path,
@@ -110,9 +117,9 @@ export function QuickOverlay() {
     const hideTimer = window.setTimeout(() => {
       const win = getCurrentWindow();
       win
-        .close()
+        .hide()
         .catch((error) => {
-          console.error("Failed to close quick overlay window:", error);
+          console.error("Failed to hide quick overlay window:", error);
         });
     }, fadeDelayMs + fadeDurationMs);
 

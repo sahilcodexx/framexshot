@@ -1,5 +1,6 @@
 //! FrameXShot — Linux backend
 
+mod capture;
 mod clipboard;
 mod commands;
 mod image;
@@ -111,6 +112,22 @@ pub fn run() {
                     .decorations(false)
                     .visible(!is_hidden)
                     .build()?;
+
+            // Pre-create the quick-overlay window (hidden) so the first capture
+            // with auto-apply is instant. Creating a WebKit window on demand
+            // costs seconds and paints a blank white window until React mounts.
+            let _ = WebviewWindowBuilder::new(
+                app,
+                "quick-overlay",
+                WebviewUrl::App("index.html?overlay=1".into()),
+            )
+            .title("FrameXShot – Quick Overlay")
+            .inner_size(360.0, 240.0)
+            .resizable(true)
+            .skip_taskbar(true)
+            .decorations(true)
+            .visible(false)
+            .build();
 
             // Now CLI capture flags - window exists, events will be received.
             if args.iter().any(|arg| arg == "--capture-region" || arg == "-r") {

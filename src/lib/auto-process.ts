@@ -132,8 +132,8 @@ export async function processScreenshotWithDefaultBackground(
           reject(new Error("Failed to create blob from canvas"));
         }
       },
-      "image/png",
-      1.0
+      "image/jpeg",
+      0.9
     );
   });
 }

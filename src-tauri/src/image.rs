@@ -91,9 +91,18 @@ pub fn save_image(img: &DynamicImage, save_dir: &str, prefix: &str) -> AppResult
 
 /// Save base64-encoded image data to a file
 pub fn save_base64_image(image_data: &str, save_dir: &str, prefix: &str) -> AppResult<String> {
-    let base64_data = image_data
-        .strip_prefix("data:image/png;base64,")
-        .ok_or("Invalid image data format: expected data:image/png;base64, prefix")?;
+    let (base64_data, extension) = if let Some(d) = image_data.strip_prefix("data:image/png;base64,") {
+        (d, "png")
+    } else if let Some(d) = image_data.strip_prefix("data:image/jpeg;base64,") {
+        (d, "jpg")
+    } else if let Some(d) = image_data.strip_prefix("data:image/jpg;base64,") {
+        (d, "jpg")
+    } else {
+        return Err(
+            "Invalid image data format: expected data:image/png;base64, or data:image/jpeg;base64, prefix"
+                .to_string(),
+        );
+    };
 
     let image_bytes = general_purpose::STANDARD
         .decode(base64_data)
@@ -102,7 +111,7 @@ pub fn save_base64_image(image_data: &str, save_dir: &str, prefix: &str) -> AppR
     let dest_path = PathBuf::from(save_dir);
     ensure_dir(&dest_path)?;
 
-    let filename = generate_filename(prefix, "png")?;
+    let filename = generate_filename(prefix, extension)?;
     let file_path = dest_path.join(&filename);
 
     fs::write(&file_path, image_bytes).map_err(|e| format!("Failed to save image: {}", e))?;

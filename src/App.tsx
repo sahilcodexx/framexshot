@@ -118,6 +118,7 @@ async function showQuickOverlay(
   screenshotPath: string,
   mouseX?: number,
   mouseY?: number,
+  dataUrl?: string,
 ) {
   try {
     const store = await Store.load("settings.json", {
@@ -133,6 +134,7 @@ async function showQuickOverlay(
   try {
     await invoke("show_quick_overlay", {
       screenshotPath,
+      dataUrl: dataUrl || null,
       mouseX: mouseX !== undefined ? mouseX : null,
       mouseY: mouseY !== undefined ? mouseY : null,
     });
@@ -326,7 +328,7 @@ function App() {
 
     try {
       await appWindow.hide();
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       if (captureMode === "ocr") {
         try {
@@ -418,7 +420,7 @@ function App() {
               });
 
               await appWindow.hide();
-              await showQuickOverlay(savedPath, mouseX, mouseY);
+              await showQuickOverlay(savedPath, mouseX, mouseY, processedImageData);
             } catch (err) {
               const errorMessage = err instanceof Error ? err.message : String(err);
               setError(`Failed to process screenshot: ${errorMessage}`);
@@ -491,7 +493,7 @@ function App() {
           });
 
           await appWindow.hide();
-          await showQuickOverlay(savedPath, mouseX, mouseY);
+          await showQuickOverlay(savedPath, mouseX, mouseY, processedImageData);
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : String(err);
           setError(`Failed to process screenshot: ${errorMessage}`);

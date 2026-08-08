@@ -1,6 +1,6 @@
 [package]
 name = "framexshot"
-version = "1.0.12"
+version = "1.0.13"
 description = "FrameXShot — Linux screenshot tool"
 authors = ["kartik labhshetwar"]
 edition = "2021"
@@ -30,6 +30,12 @@ xcap = { version = "0.8", default-features = false }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 arboard = "3"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# D-Bus capture fallbacks: xdg-desktop-portal Screenshot + GNOME Shell
+# SelectArea/ScreenshotArea. Pure Rust — already in the tree via xcap.
+zbus = "5"
+url = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3", features = [

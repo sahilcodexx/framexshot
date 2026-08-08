@@ -1,106 +1,86 @@
 app-id: com.framexshot.app
 runtime: org.gnome.Platform
-runtime-version: '47'
+runtime-version: '48'
 sdk: org.gnome.Sdk
 command: framexshot
 
-# The GNOME 47 runtime bundles libwebkit2gtk-4.1, GTK 3, GLib, etc.
-# so users don't need ANY system library installed — works on every distro.
+# GNOME 48 runtime ships libwebkit2gtk-4.1, GTK 3, GLib, etc.
+# Users need zero system libraries — works on every distro with Flatpak.
 
 finish-args:
   # ── Display ─────────────────────────────────────────────────────────────
   - --share=ipc
-  - --socket=x11        # X11 / XWayland
-  - --socket=wayland    # native Wayland
-  - --device=dri        # GPU access (WebKit renderer)
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
 
   # ── Filesystem ──────────────────────────────────────────────────────────
-  - --filesystem=home          # save screenshots anywhere in home
-  - --filesystem=/tmp          # temp directory for capture pipeline
+  - --filesystem=home
+  - --filesystem=xdg-pictures
+  - --filesystem=xdg-desktop
+  - --filesystem=/tmp
 
-  # ── D-Bus ───────────────────────────────────────────────────────────────
+  # ── D-Bus / portals ─────────────────────────────────────────────────────
   - --socket=session-bus
   - --talk-name=org.freedesktop.Notifications
-  - --talk-name=org.kde.StatusNotifierWatcher       # tray icon (KDE/wlroots)
-  - --talk-name=org.freedesktop.portal.Desktop      # xdg-desktop-portal
-  - --talk-name=org.freedesktop.portal.FileChooser  # save dialog
-  - --talk-name=org.freedesktop.portal.Screenshot   # screenshot via portal
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.portal.Desktop
+  - --talk-name=org.freedesktop.portal.FileChooser
+  - --talk-name=org.freedesktop.portal.Screenshot
+  - --talk-name=org.freedesktop.portal.OpenURI
+  # GNOME Shell screenshot D-Bus service (SelectArea/ScreenshotArea) —
+  # the only interactive capture that works inside the sandbox on GNOME.
+  - --talk-name=org.gnome.Shell
   - --system-talk-name=org.freedesktop.login1
 
   # ── Runtime env ─────────────────────────────────────────────────────────
-  # DMABuf renderer still disabled as a precaution; --device=dri handles GPU.
+  # DMABuf can blank the WebView on some GPUs inside the sandbox.
   - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
 
 modules:
-  # ── libayatana-appindicator 0.5.94 + its deps (mirrors flathub/shared-modules) ─
-  - name: libdbusmenu
-    buildsystem: autotools
-    build-options:
-      cflags: -Wno-error
+  # Official Flathub shared-modules recipe (correct commits + patches).
+  - shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json
+
+  # Optional OCR binary for the OCR capture mode.
+  - name: tesseract
+    buildsystem: cmake-ninja
     config-opts:
-      - --with-gtk=3
-      - --disable-dumper
-      - --disable-static
-      - --disable-tests
-      - --disable-gtk-doc
-      - --enable-introspection=no
-      - --disable-vala
+      - -DBUILD_TRAINING_TOOLS=OFF
+      - -DGRAPHICS_DISABLED=ON
     sources:
       - type: archive
-        url: https://launchpad.net/libdbusmenu/16.04/16.04.0/+download/libdbusmenu-16.04.0.tar.gz
-        mirror-urls:
-          - https://sources.suse.com/SUSE:SLFO:Main:Build/libdbusmenu/a5b3e4717f09f90f9cd5568a5f933e8d/libdbusmenu-16.04.0.tar.gz
-          - https://mirror.math.princeton.edu/pub/frugalware/frugalware-2.1/source/xlib/libdbusmenu/libdbusmenu-16.04.0.tar.gz
-          - https://ftp.fr.openbsd.org/pub/OpenBSD/distfiles/libdbusmenu-16.04.0.tar.gz
-        sha256: b9cc4a2acd74509435892823607d966d424bd9ad5d0b00938f27240a1bfa878a
-      - type: patch
-        paths:
-          - 0001-Fix-HAVE_VALGRIND-AM_CONDITIONAL.patch
-
-  - name: ayatana-ido
-    buildsystem: cmake-ninja
-    config-opts:
-      - -DENABLE_INTROSPECTION=OFF
-    sources:
-      - type: git
-        url: https://github.com/AyatanaIndicators/ayatana-ido.git
-        tag: 0.10.4
-        commit: f968079b09e12310fefc3fc307359025f1c74b3eb
-      - type: patch
-        paths:
-          - 0001-Make-introspection-configurable.patch
-
-  - name: libayatana-indicator
-    buildsystem: cmake-ninja
-    config-opts:
-      - -DENABLE_INTROSPECTION=OFF
-    sources:
-      - type: git
-        url: https://github.com/AyatanaIndicators/libayatana-indicator.git
-        tag: 0.9.4
-        commit: 611bb384b73fa6311777ba4c41381a06f5b99dad
-
-  - name: libayatana-appindicator
-    buildsystem: cmake-ninja
-    config-opts:
-      - -DENABLE_BINDINGS_MONO=OFF
-      - -DENABLE_BINDINGS_VALA=OFF
-      - -DENABLE_GTKDOC=OFF
-    sources:
-      - type: git
-        url: https://github.com/AyatanaIndicators/libayatana-appindicator.git
-        tag: 0.5.94
-        commit: 31e8bb083b307e1cc96af4874a9470d27bd1e79
+        url: https://github.com/tesseract-ocr/tesseract/archive/refs/tags/5.5.0.tar.gz
+        sha256: f2fb34ca035b6d087a42875a35a7a5c4155fa9979c6132365b1e5a28ebc3fc11
+    modules:
+      - name: leptonica
+        buildsystem: cmake-ninja
+        config-opts:
+          - -DBUILD_PROG=OFF
+          - -DBUILD_SHARED_LIBS=ON
+        sources:
+          - type: archive
+            url: https://github.com/DanBloomberg/leptonica/releases/download/1.85.0/leptonica-1.85.0.tar.gz
+            sha256: 3745ae3bf271a6801a2292eead83ac926e3a9bc1bf622e9cd4dd0f3786e17205
+      - name: tessdata-fast-eng
+        buildsystem: simple
+        build-commands:
+          - install -Dm644 eng.traineddata /app/share/tessdata/eng.traineddata
+        sources:
+          - type: file
+            url: https://github.com/tesseract-ocr/tessdata_fast/raw/4.1.0/eng.traineddata
+            sha256: 7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2
+            dest-filename: eng.traineddata
 
   - name: framexshot
     buildsystem: simple
     build-commands:
-      - install -Dm755  framexshot   /app/bin/framexshot
-      - install -Dm644  icon-128.png /app/share/icons/hicolor/128x128/apps/com.framexshot.app.png
-      - install -Dm644  icon-32.png  /app/share/icons/hicolor/32x32/apps/com.framexshot.app.png
-      - install -Dm644  com.framexshot.app.desktop /app/share/applications/com.framexshot.app.desktop
+      - install -Dm755 framexshot /app/bin/framexshot
+      - install -Dm644 icon-128.png /app/share/icons/hicolor/128x128/apps/com.framexshot.app.png
+      - install -Dm644 icon-32.png /app/share/icons/hicolor/32x32/apps/com.framexshot.app.png
+      - install -Dm644 com.framexshot.app.desktop /app/share/applications/com.framexshot.app.desktop
+      - install -Dm644 com.framexshot.app.metainfo.xml /app/share/metainfo/com.framexshot.app.metainfo.xml
     sources:
-      # Pre-built binary from the CI step above — no in-Flatpak compilation needed.
+      # Pre-built binary from CI (or local `cargo build --release`).
       - type: file
         path: ../src-tauri/target/release/framexshot
         dest-filename: framexshot
@@ -112,3 +92,5 @@ modules:
         dest-filename: icon-32.png
       - type: file
         path: com.framexshot.app.desktop
+      - type: file
+        path: com.framexshot.app.metainfo.xml

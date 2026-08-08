@@ -406,6 +406,45 @@ EditorStore {
 - Purpose: Reference for future UI work. All Framer spec values live here.
 - **REVERT**: Delete the file
 
+### Change 20: Linux Distro Hardening — cross-desktop capture fallbacks
+- **Files**: `src-tauri/src/capture.rs` (NEW), `src-tauri/src/commands.rs`, `src-tauri/src/screenshot.rs`, `src-tauri/src/lib.rs`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`
+- **BEFORE**: Hard-coded per-tool capture: COSMIC → grim → gnome-screenshot → scrot. Modern GNOME (42+) has no `gnome-screenshot` binary and no grim (non-wlroots), so capture failed on the most common Linux desktop. KDE Wayland was never tried (spectacle only ran on X11). The Flatpak bundle contained NO capture tool, so it could not take screenshots at all.
+- **AFTER**: New `capture.rs` module with universal fallback chains:
+  - **Region**: cosmic-screenshot → spectacle (KDE) → grim+slurp (wlroots) → **org.gnome.Shell SelectArea/ScreenshotArea over D-Bus** → gnome-screenshot → maim/scrot
+  - **Fullscreen**: cosmic-screenshot → spectacle → grim → **GNOME Shell Screenshot D-Bus** → **xdg-desktop-portal Screenshot D-Bus** → gnome-screenshot → scrot (portal works on every desktop, incl. inside Flatpak)
+  - **Window**: cosmic → spectacle → GNOME Shell ScreenshotWindow → gnome-screenshot → scrot
+  - Uses `zbus` (pure Rust, already in tree via xcap) + system-tool shell-outs. Linux-only deps: `zbus = "5"`, `url = "2"`.
+  - `commands.rs` / `screenshot.rs` refactored to delegate to the chains instead of duplicating tool logic.
+- **REVERT**: Delete capture.rs, restore the old per-tool blocks in commands.rs + screenshot.rs
+
+### Change 21: GitHub Release CI + Flatpak Manifest Fixes
+- **Files**: `.github/workflows/release.yml` (rewritten), `flatpak/com.framexshot.app.yml`, `src-tauri/tauri.conf.json`
+- Root causes of failing Linux release builds, all fixed:
+  1. **3 wrong sha256 checksums** in the flatpak manifest (tesseract 5.5.0, leptonica 1.85.0, `eng.traineddata` — the latter was a fake `e5e5e5...` placeholder) → flatpak-builder rejected every download
+  2. **Invalid YAML**: `- name: tesseract` at column 0 (not an item of `modules:`) → flatpak-builder parse error
+  3. **GNOME runtime 47** was EOL-adjacent → bumped to **48**
+  4. **No build caches** → added `swatinem/rust-cache` (Rust + frontend), flatpak runtime cache + builder state cache, `--ccache` for flatpak-builder, `pnpm install --frozen-lockfile`
+  5. **No rpm package**: rpm bundling now included (`sudo apt install rpm`, targets `appimage,deb,rpm`)
+  6. **No macOS jobs** → added `macos-13` (x86_64) + `macos-14` (aarch64) DMG builds
+  7. `includeUpdaterJson` removed (no updater configured); `concurrency` group added
+  8. **`bundle.maintainer` removed** (invalid tauri-build schema field; would fail `cargo check --release`)
+- **tauri.conf.json**: added rpm target + deb/rpm `depends`/`recommends` (appindicator alternatives, tesseract-ocr, grim/slurp/scrot/spectacle, xdg-desktop-portal, wl-clipboard etc.), `category`, `shortDescription`, `longDescription`, `homepage`
+- **REVERT**: restore old release.yml, old flatpak yml, old tauri.conf.json
+
+### Change 22: Quick Overlay — instant preview (no 5s white screen)
+- **Files**: `src-tauri/src/lib.rs`, `src-tauri/src/commands.rs`, `src-tauri/src/image.rs`, `src/components/overlay/QuickOverlay.tsx`, `src/lib/auto-process.ts`
+- **BEFORE**: After every auto-apply capture the overlay was unusably slow (~5-6s white screen):
+  1. `QuickOverlay` called `win.close()` after 5s → the window + WebKit was destroyed after EVERY capture
+  2. `show_quick_overlay` then created a brand-new window on demand (GTK/WebKit init = seconds), showed it, and only AFTER that emitted the payload → blank white first paint
+  3. auto-process encoded the framed canvas as `image/png, quality 1.0` (multi-second for large canvases)
+- **AFTER**:
+  1. `lib.rs` pre-creates the hidden `quick-overlay` window at startup (`visible(false)` + `skip_taskbar(true)`) — the WebView/React listener is always warm by the time a capture happens
+  2. `QuickOverlay` hides instead of closes → window reused forever after first init
+  3. `show_quick_overlay` emits `overlay-show-capture` BEFORE `show()` → first paint already shows the image
+  4. On a new payload the overlay clears the previous image immediately (no stale-flash on reused window)
+  5. `auto-process.ts` renders `image/jpeg, 0.9` instead of PNG — ~5× faster encode, ~8× smaller payload; `save_base64_image` is now mime-aware (png/jpg extensions)
+- **REVERT**: restore `win.close()`, emit-after-show, remove pre-creation, revert to PNG
+
 ---
 
 ## CSS Variable Reference

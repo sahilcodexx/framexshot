@@ -131,6 +131,24 @@ fn capture_all_monitors_wayland(save_path: &PathBuf) -> AppResult<Vec<MonitorSho
     }
 
     if shots.is_empty() {
+        // No per-output capture — fall back to a single fullscreen capture
+        // (portal / GNOME Shell handle this on desktops without grim)
+        let filename = generate_filename("monitor", "png")?;
+        let path = save_path.join(&filename);
+        let path_str = path.to_string_lossy().to_string();
+
+        if crate::capture::capture_fullscreen(&path).is_ok() && path.exists() {
+            return Ok(vec![MonitorShot {
+                id: 0,
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+                scale_factor: 1.0,
+                path: path_str,
+            }]);
+        }
+
         return Err("grim failed to capture any monitor output".into());
     }
 
@@ -237,81 +255,42 @@ fn capture_single_monitor_xcap(monitor: &Monitor, save_path: &PathBuf) -> AppRes
 }
 
 /// Capture primary monitor.
-/// On Wayland COSMIC: uses cosmic-screenshot (xdg-desktop-portal).
-/// On Wayland wlroots: uses grim.
-/// On X11: uses xcap.
+/// Uses the cross-desktop fallback chain in capture.rs (cosmic-screenshot,
+/// spectacle, grim, GNOME Shell D-Bus, xdg-desktop-portal, gnome-screenshot,
+/// scrot) and only falls back to xcap on X11 when no native tool exists.
 pub async fn capture_primary_monitor(_app_handle: tauri::AppHandle) -> AppResult<PathBuf> {
     let temp_dir = std::env::temp_dir();
     ensure_dir(&temp_dir)?;
     let filename = generate_filename("screenshot", "png")?;
     let screenshot_path = temp_dir.join(&filename);
 
-    if is_wayland() {
-        // COSMIC: cosmic-screenshot --interactive=false
-        if has_binary("cosmic-screenshot") {
-            let output = Command::new("cosmic-screenshot")
-                .arg("--interactive=false")
-                .arg("--notify=false")
-                .arg(format!("--save-dir={}", temp_dir.to_string_lossy()))
-                .output()
-                .map_err(|e| format!("Failed to run cosmic-screenshot: {}", e))?;
-
-            if output.status.success() {
-                let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                let path = PathBuf::from(&path_str);
-                if !path_str.is_empty() && path.exists() {
-                    return Ok(path);
-                }
-                // Find most recently modified PNG in temp_dir
-                if let Ok(entries) = std::fs::read_dir(&temp_dir) {
-                    let mut files: Vec<_> = entries
-                        .flatten()
-                        .filter(|e| e.path().extension().map(|x| x == "png").unwrap_or(false))
-                        .collect();
-                    files.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
-                    if let Some(last) = files.last() {
-                        return Ok(last.path());
-                    }
-                }
-                return Err("cosmic-screenshot completed but no file found".into());
-            }
-        }
-
-        // Wayland wlroots (sway/hyprland): grim
-        if has_binary("grim") {
-            let status = Command::new("grim")
-                .arg(screenshot_path.to_str().ok_or("Invalid path")?)
-                .status()
-                .map_err(|e| format!("Failed to run grim: {}", e))?;
-
-            if !status.success() || !screenshot_path.exists() {
-                return Err("grim failed to capture screen. Ensure xdg-desktop-portal is running.".into());
-            }
-
-            return Ok(screenshot_path);
-        }
-
-        return Err("No supported screenshot tool found. Install cosmic-screenshot (COSMIC) or grim (sway/hyprland).".into());
+    // Native tool chain — works on every desktop (incl. GNOME/KDE Wayland and Flatpak)
+    if crate::capture::capture_fullscreen(&screenshot_path).is_ok() {
+        return Ok(screenshot_path);
     }
 
-    // X11 path: use xcap
-    let monitors = Monitor::all().map_err(|e| format!("Failed to get monitors: {}", e))?;
-    if monitors.is_empty() {
-        return Err("No monitors available".into());
+    // X11 fallback via xcap
+    if !is_wayland() {
+        let monitors = Monitor::all().map_err(|e| format!("Failed to get monitors: {}", e))?;
+        if monitors.is_empty() {
+            return Err("No monitors available".into());
+        }
+        let primary = monitors
+            .iter()
+            .find(|m| m.is_primary().unwrap_or(false))
+            .or_else(|| monitors.first())
+            .ok_or("No monitor found")?;
+
+        let image = primary
+            .capture_image()
+            .map_err(|e| format!("Failed to capture primary monitor: {}", e))?;
+
+        image
+            .save(&screenshot_path)
+            .map_err(|e| format!("Failed to save screenshot: {}", e))?;
+
+        return Ok(screenshot_path);
     }
-    let primary = monitors
-        .iter()
-        .find(|m| m.is_primary().unwrap_or(false))
-        .or_else(|| monitors.first())
-        .ok_or("No monitor found")?;
 
-    let image = primary
-        .capture_image()
-        .map_err(|e| format!("Failed to capture primary monitor: {}", e))?;
-
-    image
-        .save(&screenshot_path)
-        .map_err(|e| format!("Failed to save screenshot: {}", e))?;
-
-    Ok(screenshot_path)
+    Err("No supported screen capture method found on this desktop. Install grim, spectacle, cosmic-screenshot, or scrot.".into())
 }

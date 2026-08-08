@@ -9,19 +9,29 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  # ── Build AppImage + .deb (Linux) and NSIS installer (Windows) ───────────
+  # ── Native packages: Linux (AppImage + .deb + .rpm), Windows (NSIS), macOS (DMG) ──
   build:
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: ubuntu-24.04
-            args: ''
-            arch: 'linux'
+            args: --bundles appimage,deb,rpm
+            arch: linux
           - platform: windows-latest
             args: ''
-            arch: 'windows'
+            arch: windows
+          - platform: macos-13
+            args: ''
+            arch: macos-x86_64
+          - platform: macos-14
+            args: ''
+            arch: macos-aarch64
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -33,7 +43,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -41,17 +51,23 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
       - name: Install Linux dependencies
         if: contains(matrix.platform, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
-            librsvg2-dev patchelf libxdo-dev tesseract-ocr clang libclang-dev \
-            file squashfs-tools libpipewire-0.3-dev libgbm-dev libdrm-dev
+            librsvg2-dev patchelf libxdo-dev clang libclang-dev \
+            file squashfs-tools libpipewire-0.3-dev libgbm-dev libdrm-dev \
+            rpm xz-utils zstd
 
       - name: Install frontend dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Generate release notes
         id: release_notes
@@ -84,21 +100,33 @@ jobs:
             | Platform | Package | Notes |
             |----------|---------|-------|
             | **Linux (all distros)** | `.flatpak` | ✅ Recommended — bundles its own WebKit, works everywhere |
-            | **Linux (Ubuntu/Debian)** | `.deb` | resolves apt dependencies automatically (tesseract-ocr, appindicator) |
-            | **Linux (other)** | `.AppImage` | requires `libwebkit2gtk-4.1-0` on host |
+            | **Linux (Debian/Ubuntu)** | `.deb` | resolves apt dependencies automatically |
+            | **Linux (Fedora/RHEL/OpenSUSE)** | `.rpm` | resolves rpm dependencies automatically |
+            | **Linux (other)** | `.AppImage` | bundles most libraries; needs FUSE for direct run (`--appimage-extract-and-run` as fallback) |
             | **Windows** | `*_x64-setup.exe` | standard installer |
+            | **macOS (Intel)** | `*_x64.dmg` | macOS 10.15+ |
+            | **macOS (Apple Silicon)** | `*_aarch64.dmg` | macOS 10.15+ |
 
-            ### Install Flatpak
+            ### Install Flatpak (any distro with Flatpak)
             ```sh
-            flatpak install framexshot_${{ github.ref_name }}_amd64.flatpak
+            flatpak install ./framexshot_${{ github.ref_name }}_amd64.flatpak
             flatpak run com.framexshot.app
+            ```
+
+            ### Install .deb (Debian / Ubuntu)
+            ```sh
+            sudo apt install ./framexshot_${{ github.ref_name }}_amd64.deb
+            ```
+
+            ### Install .rpm (Fedora / RHEL / OpenSUSE)
+            ```sh
+            sudo dnf install ./framexshot_${{ github.ref_name }}_x86_64.rpm
             ```
 
             ## What's New
             ${{ steps.release_notes.outputs.notes }}
           releaseDraft: true
           prerelease: false
-          includeUpdaterJson: true
           args: ${{ matrix.args }}
 
   # ── Build Flatpak bundle (universal Linux — bundles WebKitGTK via GNOME runtime) ──
@@ -110,11 +138,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -122,46 +153,59 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
       - name: Install system build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
-            librsvg2-dev patchelf libxdo-dev tesseract-ocr clang libclang-dev \
+            librsvg2-dev patchelf libxdo-dev clang libclang-dev \
             libpipewire-0.3-dev libgbm-dev libdrm-dev \
-            flatpak flatpak-builder
+            ccache flatpak flatpak-builder
 
       - name: Install frontend dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Build frontend
         run: pnpm run build
 
       - name: Build Rust binary
-        # Plain cargo build embeds dist/ via generate_context!() at compile time.
+        # cargo build embeds dist/ via generate_context!() at compile time.
         # The resulting binary is self-contained (frontend assets baked in).
-        run: cargo build --release --manifest-path src-tauri/Cargo.toml
+        run: cargo build --release --frozen --manifest-path src-tauri/Cargo.toml
 
       # Cache the GNOME SDK/Platform runtimes — first run ~2 GB download, then instant.
       - name: Cache Flatpak runtimes
         uses: actions/cache@v4
         with:
           path: ~/.local/share/flatpak
-          key: flatpak-gnome-platform-47-v1
+          key: flatpak-gnome-platform-48-v1
+
+      # Cache Flatpak sources + ccache between runs.
+      - name: Cache Flatpak build state
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/flatpak-builder
+          key: flatpak-builder-cache-48-${{ hashFiles('flatpak/**', 'src-tauri/Cargo.lock') }}
 
       - name: Install GNOME Flatpak runtime
         run: |
           flatpak remote-add --user --if-not-exists flathub \
             https://flathub.org/repo/flathub.flatpakrepo
           flatpak install --user --noninteractive -y flathub \
-            org.gnome.Platform//47 \
-            org.gnome.Sdk//47
+            org.gnome.Platform//48 \
+            org.gnome.Sdk//48
 
       - name: Build Flatpak bundle
         run: |
           flatpak-builder \
             --user \
             --force-clean \
+            --ccache \
             --repo=flatpak-repo \
             flatpak-build-dir \
             flatpak/com.framexshot.app.yml
