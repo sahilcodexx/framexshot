@@ -189,7 +189,7 @@ export type EditorStore = EditorState & EditorActions;
 const MAX_HISTORY_SIZE = 50;
 const DEFAULT_GRADIENT = gradientOptions[0];
 
-const DEFAULT_SETTINGS: EditorSettings = {
+export const DEFAULT_SETTINGS: EditorSettings = {
   backgroundType: "white",
   customColor: "#667eea",
   selectedImageSrc: null,
@@ -261,6 +261,19 @@ export const useEditorStore = create<EditorStore>()(
           const storedBorderRadius = await store.get<number>("defaultBorderRadius");
           const storedShadow = await store.get<ShadowSettings>("defaultShadow");
 
+          // Load style settings
+          const storedFrameStyle = await store.get<FrameStyleId>("defaultFrameStyle");
+          const storedLayoutPreset = await store.get<LayoutPresetId>("defaultLayoutPreset");
+          const storedBorderPreset = await store.get<BorderPresetId>("defaultBorderPreset");
+          const storedShadowPreset = await store.get<ShadowPresetId>("defaultShadowPreset");
+          const storedWindowFrame = await store.get<WindowFrameType>("defaultWindowFrame");
+          const storedShowMockup = await store.get<boolean>("defaultShowMockup");
+          const storedFramePadding = await store.get<number>("defaultFramePadding");
+          const storedFrameOpacity = await store.get<number>("defaultFrameOpacity");
+          const storedImageScale = await store.get<number>("defaultImageScale");
+          const storedImageOffsetX = await store.get<number>("defaultImageOffsetX");
+          const storedImageOffsetY = await store.get<number>("defaultImageOffsetY");
+
           set((state) => {
             // Apply background settings from preferences only
             if (storedBgType) {
@@ -306,6 +319,31 @@ export const useEditorStore = create<EditorStore>()(
             }
             if (storedShadow) {
               state.settings.shadow = storedShadow;
+            }
+
+            // Apply style settings
+            if (storedFrameStyle) state.settings.frameStyle = storedFrameStyle;
+            if (storedLayoutPreset) state.settings.layoutPreset = storedLayoutPreset;
+            if (storedBorderPreset) state.settings.borderPreset = storedBorderPreset;
+            if (storedShadowPreset) state.settings.shadowPreset = storedShadowPreset;
+            if (storedWindowFrame) state.settings.windowFrame = storedWindowFrame;
+            if (storedShowMockup !== null && storedShowMockup !== undefined) {
+              state.settings.showMockup = storedShowMockup;
+            }
+            if (storedFramePadding !== null && storedFramePadding !== undefined) {
+              state.settings.framePadding = storedFramePadding;
+            }
+            if (storedFrameOpacity !== null && storedFrameOpacity !== undefined) {
+              state.settings.frameOpacity = storedFrameOpacity;
+            }
+            if (storedImageScale !== null && storedImageScale !== undefined) {
+              state.settings.imageScale = storedImageScale;
+            }
+            if (storedImageOffsetX !== null && storedImageOffsetX !== undefined) {
+              state.settings.imageOffsetX = storedImageOffsetX;
+            }
+            if (storedImageOffsetY !== null && storedImageOffsetY !== undefined) {
+              state.settings.imageOffsetY = storedImageOffsetY;
             }
 
             state._isInitialized = true;
@@ -666,6 +704,19 @@ export const useEditorStore = create<EditorStore>()(
           await store.set("defaultNoiseAmount", state.settings.noiseAmount);
           await store.set("defaultBorderRadius", state.settings.borderRadius);
           await store.set("defaultShadow", state.settings.shadow);
+
+          // Style settings
+          await store.set("defaultFrameStyle", state.settings.frameStyle);
+          await store.set("defaultLayoutPreset", state.settings.layoutPreset);
+          await store.set("defaultBorderPreset", state.settings.borderPreset);
+          await store.set("defaultShadowPreset", state.settings.shadowPreset);
+          await store.set("defaultWindowFrame", state.settings.windowFrame);
+          await store.set("defaultShowMockup", state.settings.showMockup);
+          await store.set("defaultFramePadding", state.settings.framePadding);
+          await store.set("defaultFrameOpacity", state.settings.frameOpacity);
+          await store.set("defaultImageScale", state.settings.imageScale);
+          await store.set("defaultImageOffsetX", state.settings.imageOffsetX);
+          await store.set("defaultImageOffsetY", state.settings.imageOffsetY);
           await store.save();
         } catch (err) {
           console.error("Failed to save effect settings as defaults:", err);
