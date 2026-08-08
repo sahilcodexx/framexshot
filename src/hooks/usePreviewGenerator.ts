@@ -79,7 +79,7 @@ export async function loadImage(src: string): Promise<HTMLImageElement> {
 /**
  * Get the background image source based on settings
  */
-function getBackgroundImageSrc(settings: EditorSettings): string | null {
+export function getBackgroundImageSrc(settings: EditorSettings): string | null {
   if (settings.backgroundType === "image" && settings.selectedImageSrc) {
     return resolveBackgroundPath(settings.selectedImageSrc);
   }
@@ -195,7 +195,7 @@ function drawBackground(
  * Full editor composite: background + effects + framed screenshot + layout + shadow.
  * Shared by live preview and high-quality export so they stay in sync.
  */
-function renderFullCanvas(
+export function renderFullCanvas(
   screenshotImage: HTMLImageElement,
   settings: EditorSettings,
   padding: { top: number; bottom: number; left: number; right: number },

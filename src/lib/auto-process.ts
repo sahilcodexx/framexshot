@@ -1,183 +1,156 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { Store } from "@tauri-apps/plugin-store";
-import { createHighQualityCanvas } from "./canvas-utils";
+import {
+  loadImage,
+  getBackgroundImageSrc,
+  renderFullCanvas,
+} from "@/hooks/usePreviewGenerator";
 import { resolveBackgroundPath, getDefaultBackgroundPath } from "./asset-registry";
-
-type BackgroundType = "transparent" | "white" | "black" | "gray" | "custom" | "image" | "gradient";
+import { gradientOptions } from "@/components/editor/BackgroundSelector";
+import {
+  type BackgroundType,
+  type EditorSettings,
+  type FrameStyleId,
+  type LayoutPresetId,
+  type BorderPresetId,
+  type ShadowPresetId,
+  type ShadowSettings,
+  type WindowFrameType,
+  DEFAULT_SETTINGS,
+} from "@/stores/editorStore";
 
 export async function processScreenshotWithDefaultBackground(
   imagePath: string
 ): Promise<string> {
-  return new Promise(async (resolve, reject) => {
-    let backgroundType: BackgroundType = "image";
-    let customColor = "#667eea";
-    let defaultBgImage: string = getDefaultBackgroundPath();
-    let bgImage: HTMLImageElement | null = null;
-    
+  const settings: EditorSettings = { ...DEFAULT_SETTINGS };
+
+  try {
+    const store = await Store.load("settings.json");
+
+    const storedBgType = await store.get<BackgroundType>("defaultBackgroundType");
+    const storedCustomColor = await store.get<string>("defaultCustomColor");
+    const storedDefaultBg = await store.get<string>("defaultBackgroundImage");
+
+    const storedBlur = await store.get<number>("defaultBlurAmount");
+    const storedNoise = await store.get<number>("defaultNoiseAmount");
+    const storedRadius = await store.get<number>("defaultBorderRadius");
+    const storedShadow = await store.get<ShadowSettings>("defaultShadow");
+
+    const storedFrameStyle = await store.get<FrameStyleId>("defaultFrameStyle");
+    const storedLayoutPreset = await store.get<LayoutPresetId>("defaultLayoutPreset");
+    const storedBorderPreset = await store.get<BorderPresetId>("defaultBorderPreset");
+    const storedShadowPreset = await store.get<ShadowPresetId>("defaultShadowPreset");
+    const storedWindowFrame = await store.get<WindowFrameType>("defaultWindowFrame");
+    const storedShowMockup = await store.get<boolean>("defaultShowMockup");
+    const storedFramePadding = await store.get<number>("defaultFramePadding");
+    const storedFrameOpacity = await store.get<number>("defaultFrameOpacity");
+    const storedImageScale = await store.get<number>("defaultImageScale");
+    const storedImageOffsetX = await store.get<number>("defaultImageOffsetX");
+    const storedImageOffsetY = await store.get<number>("defaultImageOffsetY");
+
+    if (storedBgType) settings.backgroundType = storedBgType;
+    if (storedCustomColor) settings.customColor = storedCustomColor;
+
+    if (storedBgType === "image") {
+      settings.selectedImageSrc = storedDefaultBg
+        ? resolveBackgroundPath(storedDefaultBg)
+        : getDefaultBackgroundPath();
+    } else if (storedBgType === "gradient") {
+      const normalizedId = storedDefaultBg
+        ? storedDefaultBg.replace("gradient-", "mesh-")
+        : "mesh-1";
+      const gradient =
+        gradientOptions.find(
+          (option) => option.id === normalizedId || option.id === storedDefaultBg
+        ) || gradientOptions[0];
+      if (gradient) {
+        settings.gradientId = gradient.id;
+        settings.gradientSrc = gradient.src;
+        settings.gradientColors = gradient.colors;
+      }
+    } else if (storedBgType) {
+      settings.selectedImageSrc = null;
+    }
+
+    if (storedBlur !== null && storedBlur !== undefined) settings.blurAmount = storedBlur;
+    if (storedNoise !== null && storedNoise !== undefined) settings.noiseAmount = storedNoise;
+    if (storedRadius !== null && storedRadius !== undefined) settings.borderRadius = storedRadius;
+    if (storedShadow) settings.shadow = storedShadow;
+
+    if (storedFrameStyle) settings.frameStyle = storedFrameStyle;
+    if (storedLayoutPreset) settings.layoutPreset = storedLayoutPreset;
+    if (storedBorderPreset) settings.borderPreset = storedBorderPreset;
+    if (storedShadowPreset) settings.shadowPreset = storedShadowPreset;
+    if (storedWindowFrame) settings.windowFrame = storedWindowFrame;
+    if (storedShowMockup !== null && storedShowMockup !== undefined) settings.showMockup = storedShowMockup;
+    if (storedFramePadding !== null && storedFramePadding !== undefined) settings.framePadding = storedFramePadding;
+    if (storedFrameOpacity !== null && storedFrameOpacity !== undefined) settings.frameOpacity = storedFrameOpacity;
+    if (storedImageScale !== null && storedImageScale !== undefined) settings.imageScale = storedImageScale;
+    if (storedImageOffsetX !== null && storedImageOffsetX !== undefined) settings.imageOffsetX = storedImageOffsetX;
+    if (storedImageOffsetY !== null && storedImageOffsetY !== undefined) settings.imageOffsetY = storedImageOffsetY;
+  } catch (err) {
+    console.error("Failed to load default settings:", err);
+  }
+
+  const screenshotImage = await loadScreenshot(imagePath);
+
+  const bgSrc = getBackgroundImageSrc(settings);
+  let bgImage: HTMLImageElement | null = null;
+  if (bgSrc) {
     try {
-      const store = await Store.load("settings.json");
-      const storedBgType = await store.get<BackgroundType>("defaultBackgroundType");
-      const storedCustomColor = await store.get<string>("defaultCustomColor");
-      const storedDefaultBg = await store.get<string>("defaultBackgroundImage");
-      
-      if (storedBgType) {
-        backgroundType = storedBgType;
-      }
-      if (storedCustomColor) {
-        customColor = storedCustomColor;
-      }
-      if (storedDefaultBg && (backgroundType === "image" || backgroundType === "gradient")) {
-        defaultBgImage = resolveBackgroundPath(storedDefaultBg);
-      }
+      bgImage = await loadImage(bgSrc);
     } catch (err) {
-      console.error("Failed to load default background from settings:", err);
+      console.warn("Failed to load default background image:", err);
     }
+  }
 
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    
-    img.onload = async () => {
-      try {
-        const avgDimension = (img.width + img.height) / 2;
-        const padding = Math.min(Math.round(avgDimension * 0.1), 400);
-        const paddingTop = padding;
-        const paddingBottom = padding;
-        const paddingLeft = padding;
-        const paddingRight = padding;
+  const avgDimension = (screenshotImage.width + screenshotImage.height) / 2;
+  const padding = Math.min(Math.round(avgDimension * 0.1), 400);
+  const isTransparent = settings.backgroundType === "transparent";
+  const finalPadding = isTransparent ? 0 : padding;
 
-        if (backgroundType === "image" || backgroundType === "gradient") {
-          bgImage = new Image();
-          bgImage.crossOrigin = "anonymous";
-          
-          bgImage.onload = () => {
-            try {
-              const isGradient = backgroundType === "gradient";
-              const canvas = createHighQualityCanvas({
-                image: img,
-                backgroundType,
-                customColor,
-                selectedImage: isGradient ? null : defaultBgImage,
-                bgImage: isGradient ? null : bgImage,
-                blurAmount: 0,
-                noiseAmount: 20,
-                borderRadius: 12,
-                paddingTop,
-                paddingBottom,
-                paddingLeft,
-                paddingRight,
-                gradientImage: isGradient ? bgImage : null,
-                shadow: {
-                  blur: 33,
-                  offsetX: 18,
-                  offsetY: 23,
-                  opacity: 39,
-                },
-              });
+  const canvas = renderFullCanvas(
+    screenshotImage,
+    settings,
+    { top: finalPadding, bottom: finalPadding, left: finalPadding, right: finalPadding },
+    bgImage
+  );
 
-              canvas.toBlob(
-                (blob) => {
-                  if (blob) {
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                      resolve(reader.result as string);
-                    };
-                    reader.onerror = () => {
-                      reject(new Error("Failed to read processed image"));
-                    };
-                    reader.readAsDataURL(blob);
-                  } else {
-                    reject(new Error("Failed to create blob from canvas"));
-                  }
-                },
-                "image/png",
-                1.0
-              );
-            } catch (err) {
-              reject(err);
-            }
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            resolve(reader.result as string);
           };
-          
-          bgImage.onerror = () => {
-            reject(new Error("Failed to load background image"));
+          reader.onerror = () => {
+            reject(new Error("Failed to read processed image"));
           };
-          
-          bgImage.src = defaultBgImage;
+          reader.readAsDataURL(blob);
         } else {
-          try {
-            const isTransparent = backgroundType === "transparent";
-            const blurAmount = 0;
-            const finalPadding = isTransparent ? 0 : padding;
-            const paddingTop = finalPadding;
-            const paddingBottom = finalPadding;
-            const paddingLeft = finalPadding;
-            const paddingRight = finalPadding;
-
-            const canvas = createHighQualityCanvas({
-              image: img,
-              backgroundType,
-              customColor,
-              selectedImage: null,
-              bgImage: null,
-              gradientImage: null,
-              blurAmount,
-              noiseAmount: 20,
-              borderRadius: 12,
-              paddingTop,
-              paddingBottom,
-              paddingLeft,
-              paddingRight,
-              shadow: isTransparent ? {
-                blur: 0,
-                offsetX: 0,
-                offsetY: 0,
-                opacity: 0,
-              } : {
-                blur: 33,
-                offsetX: 18,
-                offsetY: 23,
-                opacity: 39,
-              },
-            });
-
-            canvas.toBlob(
-              (blob) => {
-                if (blob) {
-                  const reader = new FileReader();
-                  reader.onloadend = () => {
-                    resolve(reader.result as string);
-                  };
-                  reader.onerror = () => {
-                    reject(new Error("Failed to read processed image"));
-                  };
-                  reader.readAsDataURL(blob);
-                } else {
-                  reject(new Error("Failed to create blob from canvas"));
-                }
-              },
-              "image/png",
-              1.0
-            );
-          } catch (err) {
-            reject(err);
-          }
+          reject(new Error("Failed to create blob from canvas"));
         }
-      } catch (err) {
-        reject(err);
-      }
-    };
-    
-    let assetUrl = imagePath;
-    if (!imagePath.startsWith("data:") && !imagePath.startsWith("http:") && !imagePath.startsWith("https:")) {
-      try {
-        assetUrl = await invoke<string>("read_file_as_base64", { path: imagePath });
-      } catch (err) {
-        console.warn("Base64 conversion failed in auto-process, falling back to convertFileSrc:", err);
-        assetUrl = convertFileSrc(imagePath);
-      }
-    }
-    if (assetUrl.startsWith("http") || assetUrl.startsWith("asset:")) {
-      img.crossOrigin = "anonymous";
-    }
-    img.src = assetUrl;
+      },
+      "image/png",
+      1.0
+    );
   });
+}
+
+async function loadScreenshot(imagePath: string): Promise<HTMLImageElement> {
+  let assetUrl = imagePath;
+  if (
+    !imagePath.startsWith("data:") &&
+    !imagePath.startsWith("http:") &&
+    !imagePath.startsWith("https:")
+  ) {
+    try {
+      assetUrl = await invoke<string>("read_file_as_base64", { path: imagePath });
+    } catch (err) {
+      console.warn("Base64 conversion failed in auto-process, falling back to convertFileSrc:", err);
+      assetUrl = convertFileSrc(imagePath);
+    }
+  }
+  return loadImage(assetUrl);
 }

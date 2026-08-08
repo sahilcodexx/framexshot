@@ -101,7 +101,7 @@ export const EffectsPanel = memo(function EffectsPanel({
     try {
       await onSaveAsDefaults();
       setJustSaved(true);
-      toast.success("Effect settings saved as defaults");
+      toast.success("All settings saved as defaults");
       setTimeout(() => setJustSaved(false), 2000);
     } catch {
       toast.error("Failed to save defaults");
