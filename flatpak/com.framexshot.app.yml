@@ -1,10 +1,11 @@
 app-id: com.framexshot.app
 runtime: org.gnome.Platform
-runtime-version: '48'
+runtime-version: '49'
 sdk: org.gnome.Sdk
 command: framexshot
 
-# GNOME 48 runtime ships libwebkit2gtk-4.1, GTK 3, GLib, etc.
+# GNOME 49 runtime ships libwebkit2gtk-4.1, GTK 3, GLib, etc.
+# (GNOME 48 runtime is EOL since 2026-04-11 — do not downgrade.)
 # Users need zero system libraries — works on every distro with Flatpak.
 
 finish-args:

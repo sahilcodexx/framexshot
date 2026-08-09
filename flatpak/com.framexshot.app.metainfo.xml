@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.framexshot.app</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>BSD-3-Clause</project_license>
+  <name>FrameXShot</name>
+  <summary>Fast, beautiful screenshot tool for Linux</summary>
+  <description>
+    <p>
+      FrameXShot is a fast, privacy-first screenshot tool for Linux. Capture a
+      region, the full screen, a window or live OCR — then frame, annotate and
+      polish the shot with backgrounds, effects and callouts before saving it
+      to disk or copying it to the clipboard.
+    </p>
+    <p>
+      Everything runs locally: no cloud, no telemetry. Capture works on GNOME,
+      KDE Plasma, COSMIC, wlroots compositors (Sway/Hyprland) and X11 desktops
+      via automatic desktop-aware fallback chains.
+    </p>
+  </description>
+  <developer_name>Kartik Labhshetwar</developer_name>
+  <url type="homepage">https://github.com/kartiklhb/framexshot</url>
+  <url type="bugtracker">https://github.com/kartiklhb/framexshot/issues</url>
+  <url type="vcs-browser">https://github.com/kartiklhb/framexshot</url>
+  <launchable type="desktop-id">com.framexshot.app.desktop</launchable>
+  <provides>
+    <binary>framexshot</binary>
+  </provides>
+  <categories>
+    <category>Graphics</category>
+    <category>Utility</category>
+  </categories>
+  <keywords>
+    <keyword>screenshot</keyword>
+    <keyword>capture</keyword>
+    <keyword>screen</keyword>
+    <keyword>region</keyword>
+    <keyword>annotate</keyword>
+    <keyword>ocr</keyword>
+  </keywords>
+  <releases>
+    <release version="1.0.0" date="2026-08-09"/>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>
