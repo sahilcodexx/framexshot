@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Native packages: Linux (AppImage + .deb + .rpm), Windows (NSIS), macOS (DMG) ──
+  # ── Native packages: Linux (AppImage + .deb + .rpm, x86_64 + arm64), Windows (NSIS), macOS (DMG) ──
   build:
     strategy:
       fail-fast: false
@@ -22,7 +22,10 @@ jobs:
         include:
           - platform: ubuntu-24.04
             args: --bundles appimage,deb,rpm
-            arch: linux
+            arch: linux-x86_64
+          - platform: ubuntu-24.04-arm
+            args: --bundles appimage,deb,rpm
+            arch: linux-arm64
           - platform: windows-latest
             args: ''
             arch: windows
@@ -44,6 +47,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -68,6 +72,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Resolve app version (asset names use the bare version, no "v")
+        run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
       - name: Generate release notes
         id: release_notes
@@ -109,18 +116,18 @@ jobs:
 
             ### Install Flatpak (any distro with Flatpak)
             ```sh
-            flatpak install ./framexshot_${{ github.ref_name }}_amd64.flatpak
+            flatpak install ./framexshot_${{ env.APP_VERSION }}_amd64.flatpak
             flatpak run com.framexshot.app
             ```
 
             ### Install .deb (Debian / Ubuntu)
             ```sh
-            sudo apt install ./framexshot_${{ github.ref_name }}_amd64.deb
+            sudo apt install ./framexshot_${{ env.APP_VERSION }}_amd64.deb
             ```
 
             ### Install .rpm (Fedora / RHEL / OpenSUSE)
             ```sh
-            sudo dnf install ./framexshot_${{ github.ref_name }}_x86_64.rpm
+            sudo dnf install ./framexshot_${{ env.APP_VERSION }}_x86_64.rpm
             ```
 
             ## What's New
@@ -146,6 +153,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -170,6 +178,9 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Resolve app version (asset names use the bare version, no "v")
+        run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
       - name: Build frontend
         run: pnpm run build
 
@@ -179,26 +190,33 @@ jobs:
         run: cargo build --release --frozen --manifest-path src-tauri/Cargo.toml
 
       # Cache the GNOME SDK/Platform runtimes — first run ~2 GB download, then instant.
+      # GNOME 49 platform: 48 is EOL (2026-04-11) — bump both the version AND
+      # the cache key together or the stale cache will be reused.
       - name: Cache Flatpak runtimes
         uses: actions/cache@v4
         with:
           path: ~/.local/share/flatpak
-          key: flatpak-gnome-platform-48-v1
+          key: flatpak-gnome-platform-49-v1
 
       # Cache Flatpak sources + ccache between runs.
       - name: Cache Flatpak build state
         uses: actions/cache@v4
         with:
           path: ~/.cache/flatpak-builder
-          key: flatpak-builder-cache-48-${{ hashFiles('flatpak/**', 'src-tauri/Cargo.lock') }}
+          key: flatpak-builder-cache-49-${{ hashFiles('flatpak/**', 'src-tauri/Cargo.lock') }}
 
       - name: Install GNOME Flatpak runtime
         run: |
           flatpak remote-add --user --if-not-exists flathub \
             https://flathub.org/repo/flathub.flatpakrepo
           flatpak install --user --noninteractive -y flathub \
-            org.gnome.Platform//48 \
-            org.gnome.Sdk//48
+            org.gnome.Platform//49 \
+            org.gnome.Sdk//49
+
+      - name: Verify shared-modules recipe is vendored
+        run: |
+          test -f flatpak/shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json \
+            || { echo "flatpak/shared-modules/ must be committed (see AGENTS.md Change 21)"; exit 1; }
 
       - name: Build Flatpak bundle
         run: |
@@ -213,15 +231,22 @@ jobs:
           flatpak build-bundle \
             --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
             flatpak-repo \
-            framexshot_${{ github.ref_name }}_amd64.flatpak \
+            framexshot_${{ env.APP_VERSION }}_amd64.flatpak \
             com.framexshot.app
+
+      - name: Validate Flatpak bundle
+        run: |
+          test -f framexshot_${{ env.APP_VERSION }}_amd64.flatpak
+          flatpak install --user --noninteractive -y \
+            framexshot_${{ env.APP_VERSION }}_amd64.flatpak
+          flatpak info --show-ref com.framexshot.app
 
       - name: Upload Flatpak to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ github.ref_name }}" \
-            framexshot_${{ github.ref_name }}_amd64.flatpak \
+            framexshot_${{ env.APP_VERSION }}_amd64.flatpak \
             --clobber
 
   # ── Publish draft → public release ───────────────────────────────────────
