@@ -193,7 +193,9 @@ jobs:
       - name: Build Rust binary
         # cargo build embeds dist/ via generate_context!() at compile time.
         # The resulting binary is self-contained (frontend assets baked in).
-        run: cargo build --release --frozen --manifest-path src-tauri/Cargo.toml
+        # --locked protects the committed Cargo.lock; --frozen (offline) is
+        # avoided because fresh runners lack a cached crates.io index.
+        run: cargo build --release --locked --manifest-path src-tauri/Cargo.toml
 
       # Cache the GNOME SDK/Platform runtimes — first run ~2 GB download, then instant.
       # GNOME 49 platform: 48 is EOL (2026-04-11) — bump both the version AND
