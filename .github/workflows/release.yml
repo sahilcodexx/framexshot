@@ -68,7 +68,7 @@ jobs:
             libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
             librsvg2-dev patchelf libxdo-dev clang libclang-dev \
             file squashfs-tools libpipewire-0.3-dev libgbm-dev libdrm-dev \
-            rpm xz-utils zstd
+            rpm xz-utils zstd xdg-utils
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
