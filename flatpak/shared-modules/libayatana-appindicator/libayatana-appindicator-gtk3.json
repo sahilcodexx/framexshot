@@ -58,8 +58,7 @@
             "name": "ayatana-ido",
             "buildsystem": "cmake-ninja",
             "cleanup": [
-                "/include",
-                "/lib/pkgconfig"
+                "/include"
             ],
             "config-opts": [
                 "-DENABLE_INTROSPECTION=OFF"
@@ -88,7 +87,6 @@
             "buildsystem": "cmake-ninja",
             "cleanup": [
                 "/include",
-                "/lib/pkgconfig",
                 "/libexec",
                 "/share"
             ],
