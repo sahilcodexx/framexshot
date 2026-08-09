@@ -87,17 +87,111 @@ All shortcuts are customisable in Preferences.
 
 ### Download a Release
 
-1. Go to [Releases](../../releases)
-2. Download the appropriate package for your distro:
-   - `.AppImage` — Universal (x86\_64)
-   - `.deb` — Debian / Ubuntu
-   - `.rpm` — Fedora / openSUSE
-3. Make it executable (AppImage) and launch:
-   ```bash
-   chmod +x framexshot_*.AppImage
-   ./framexshot_*.AppImage
-   ```
-4. On first launch, grant **Screen Recording** permission if prompted by your compositor.
+FrameXShot is packaged for all major Linux distributions and architectures.
+
+#### 📦 Flatpak (Universal — Recommended)
+
+The Flatpak package is self-contained (bundles its own WebKitGTK 4.1 runtime) and works reliably across all Linux distributions without dependency conflicts:
+
+```bash
+# Install Flatpak bundle
+flatpak install ./framexshot_1.0.0_amd64.flatpak
+
+# Run FrameXShot
+flatpak run com.framexshot.app
+```
+
+#### 🌀 Debian / Ubuntu / Pop!_OS / Linux Mint
+
+Download the `.deb` package from [Releases](../../releases):
+
+```bash
+sudo apt update
+sudo apt install ./framexshot_1.0.0_amd64.deb
+```
+
+*APT automatically installs required dependencies (`libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libayatana-appindicator3-1`, `tesseract-ocr`).*
+
+#### 🎩 Fedora / RHEL / CentOS Stream / Rocky Linux / AlmaLinux
+
+Download the `.rpm` package from [Releases](../../releases):
+
+```bash
+sudo dnf install ./framexshot_1.0.0_x86_64.rpm
+```
+
+#### 🦎 openSUSE (Leap / Tumbleweed)
+
+Download the `.rpm` or `.AppImage` from [Releases](../../releases):
+
+```bash
+# Via zypper (.rpm)
+sudo zypper install ./framexshot_1.0.0_x86_64.rpm
+```
+
+#### 🏔️ Arch Linux / Manjaro / EndeavourOS
+
+Use the `.AppImage` or build from source:
+
+```bash
+# Make AppImage executable and run
+chmod +x framexshot_1.0.0_amd64.AppImage
+./framexshot_1.0.0_amd64.AppImage
+```
+
+#### 🚀 AppImage (Universal Binary)
+
+Works on any Linux distribution with FUSE installed:
+
+```bash
+chmod +x framexshot_1.0.0_amd64.AppImage
+./framexshot_1.0.0_amd64.AppImage
+
+# If FUSE is not installed on your system (e.g. Ubuntu 22.04+ default minimal setup):
+./framexshot_1.0.0_amd64.AppImage --appimage-extract-and-run
+```
+
+---
+
+### Desktop Environment & Wayland Capture Compatibility
+
+FrameXShot automatically detects your desktop environment and Wayland/X11 session, using multi-tiered capture fallbacks:
+
+| Desktop Environment | Display Server | Primary Tool | Fallback Chain |
+|---------------------|----------------|--------------|----------------|
+| **GNOME 42+** | Wayland / X11 | `org.gnome.Shell` D-Bus (built-in, no install needed) | `xdg-desktop-portal` → `gnome-screenshot` |
+| **KDE Plasma 5/6** | Wayland / X11 | `spectacle` | `xdg-desktop-portal` → `grim` + `slurp` |
+| **COSMIC** | Wayland | `cosmic-screenshot` | `xdg-desktop-portal` → `grim` |
+| **Sway / Hyprland** | Wayland (wlroots) | `grim` + `slurp` | `xdg-desktop-portal` |
+| **XFCE / MATE / Cinnamon / LXQt** | X11 | `maim` / `scrot` / `spectacle` | `xdg-desktop-portal` → `xcap` |
+
+#### Install capture backends
+
+Most desktops already ship a working tool (GNOME 42+ works out of the box — no install needed). For the others, install the package for your distro:
+
+**Debian / Ubuntu / Pop!_OS / Mint:**
+```bash
+sudo apt install spectacle grim slurp scrot maim wl-clipboard tesseract-ocr xdg-desktop-portal
+```
+
+**Fedora / RHEL:**
+```bash
+sudo dnf install spectacle grim slurp scrot maim wl-clipboard tesseract xdg-desktop-portal
+```
+
+**Arch Linux / Manjaro:**
+```bash
+sudo pacman -S spectacle grim slurp scrot maim wl-clipboard tesseract xdg-desktop-portal
+```
+
+**openSUSE (Leap / Tumbleweed):**
+```bash
+sudo zypper install spectacle grim slurp scrot maim wl-clipboard tesseract-ocr xdg-desktop-portal
+```
+
+*Tip: For optical character recognition (OCR), install `tesseract-ocr` (Debian/Ubuntu) or `tesseract` (Fedora/Arch/openSUSE). The Flatpak bundle ships its own copy — nothing to install.*
+
+---
 
 ### Build from Source
 
@@ -105,34 +199,87 @@ All shortcuts are customisable in Preferences.
 
 | Tool | Minimum Version |
 |------|----------------|
-| Node.js | 18+ |
+| Node.js | 20+ |
 | pnpm | 10+ |
-| Rust | latest stable |
+| Rust | 1.80+ (stable) |
 | Tauri CLI | v2 |
 
-#### Linux system dependencies
+#### System Build Dependencies by Distro
 
+**Debian / Ubuntu / Pop!_OS:**
 ```bash
-# Debian / Ubuntu
-sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
-  libxcb1-dev libxrandr-dev libdbus-1-dev
-
-# Fedora
-sudo dnf install webkit2gtk4.1-devel libayatana-appindicator-gtk3-devel librsvg2-devel \
-  libxcb-devel libXrandr-devel dbus-devel
+sudo apt update
+sudo apt install -y build-essential curl wget pkg-config \
+  libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+  librsvg2-dev patchelf libxdo-dev clang libclang-dev \
+  libpipewire-0.3-dev libgbm-dev libdrm-dev
 ```
 
-#### Clone and build
+**Fedora / RHEL / CentOS:**
+```bash
+sudo dnf install -y gcc gcc-c++ make curl wget pkg-config \
+  gtk3-devel webkit2gtk4.1-devel libayatana-appindicator-gtk3-devel \
+  librsvg2-devel patchelf libxdo-devel clang-devel \
+  pipewire-devel mesa-libgbm-devel libdrm-devel
+```
+
+**Arch Linux / Manjaro:**
+```bash
+sudo pacman -S --needed base-devel curl wget pkgconf \
+  gtk3 webkit2gtk-4.1 libayatana-appindicator \
+  librsvg patchelf xdotool clang \
+  pipewire mesa libdrm
+```
+
+**openSUSE (Leap / Tumbleweed):**
+```bash
+sudo zypper install -t pattern devel_basis
+sudo zypper install -y gtk3-devel libwebkit2gtk-4_1-devel \
+  libayatana-appindicator3-devel librsvg-devel patchelf \
+  libxdo-devel clang-devel pipewire-devel
+```
+
+#### Clone & Build
 
 ```bash
-git clone https://github.com/yourusername/framexshot.git
+# 1. Clone repository
+git clone https://github.com/kartiklhb/framexshot.git
 cd framexshot
 
-pnpm install
+# 2. Install frontend dependencies
+pnpm install --frozen-lockfile
+
+# 3. Build production bundle (generates AppImage, .deb, .rpm)
 pnpm tauri build
 ```
 
-The distributable is written to `src-tauri/target/release/bundle/`.
+The compiled packages will be created in `src-tauri/target/release/bundle/`.
+
+#### Build the Flatpak bundle (optional)
+
+Requires `flatpak` + `flatpak-builder` on the host:
+
+```bash
+# 1. Frontend build (embedded into the Rust binary)
+pnpm install --frozen-lockfile
+pnpm run build
+
+# 2. Rust release binary (webview assets are baked in at compile time)
+cargo build --release --manifest-path src-tauri/Cargo.toml
+
+# 3. Install the GNOME 49 runtime (48 is EOL and must not be used)
+flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak install --user --noninteractive -y flathub org.gnome.Platform//49 org.gnome.Sdk//49
+
+# 4. Build the bundle
+flatpak-builder --user --force-clean --repo=flatpak-repo \
+  flatpak-build-dir flatpak/com.framexshot.app.yml
+
+# 5. Export a single-file bundle and install it
+flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
+  flatpak-repo framexshot.flatpak com.framexshot.app
+flatpak install --user ./framexshot.flatpak
+```
 
 ---
 

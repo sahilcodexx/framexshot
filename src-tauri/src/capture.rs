@@ -30,15 +30,30 @@ pub fn is_wayland() -> bool {
             .unwrap_or(false)
 }
 
-/// Check if a binary is on PATH
+/// Check if a binary is on PATH (pure Rust — no `which` dependency, which is
+/// absent from minimal desktops/minimal installs)
 pub fn has_binary(name: &str) -> bool {
-    Command::new("which")
-        .arg(name)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    let Ok(path_var) = std::env::var("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path_var).any(|dir| {
+        let candidate = dir.join(name);
+        if !candidate.is_file() {
+            return false;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            candidate
+                .metadata()
+                .map(|m| m.permissions().mode() & 0o111 != 0)
+                .unwrap_or(false)
+        }
+        #[cfg(not(unix))]
+        {
+            true
+        }
+    })
 }
 
 /// Interactively capture a user-selected region into `path`.
@@ -81,6 +96,12 @@ pub fn capture_region(path: &Path) -> Result<(), String> {
 
     // X11
     if has_binary("spectacle") && spectacle_region(path).is_ok() {
+        return Ok(());
+    }
+    // GNOME Shell's D-Bus picker works on X11 sessions too (covers default
+    // GNOME X11 installs that ship no screenshot CLI tools)
+    #[cfg(target_os = "linux")]
+    if gnome_shell_region(path).is_ok() {
         return Ok(());
     }
     if has_binary("maim") {
@@ -154,6 +175,11 @@ pub fn capture_fullscreen(path: &Path) -> Result<(), String> {
 
     // X11
     if has_binary("spectacle") && spectacle_fullscreen(path).is_ok() {
+        return Ok(());
+    }
+    // GNOME Shell D-Bus covers X11 GNOME sessions that lack CLI tools
+    #[cfg(target_os = "linux")]
+    if gnome_shell_fullscreen(path).is_ok() {
         return Ok(());
     }
     if has_binary("scrot") {
@@ -241,6 +267,11 @@ pub fn capture_window(path: &Path) -> Result<(), String> {
         if status.success() && path.exists() {
             return Ok(());
         }
+    }
+    // GNOME Shell window capture works on X11 sessions too
+    #[cfg(target_os = "linux")]
+    if gnome_shell_window(path).is_ok() {
+        return Ok(());
     }
     if has_binary("scrot") {
         let status = Command::new("scrot")

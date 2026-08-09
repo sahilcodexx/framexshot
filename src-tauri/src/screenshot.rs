@@ -8,7 +8,7 @@
 
 use serde::Serialize;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use xcap::Monitor;
 
 use crate::utils::{ensure_dir, generate_filename, generate_filename_with_id, AppResult};
@@ -21,15 +21,29 @@ fn is_wayland() -> bool {
             .unwrap_or(false)
 }
 
-/// Check if a binary is on PATH
+/// Check if a binary is on PATH (pure Rust — no `which` dependency)
 fn has_binary(name: &str) -> bool {
-    Command::new("which")
-        .arg(name)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    let Ok(path_var) = std::env::var("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path_var).any(|dir| {
+        let candidate = dir.join(name);
+        if !candidate.is_file() {
+            return false;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            candidate
+                .metadata()
+                .map(|m| m.permissions().mode() & 0o111 != 0)
+                .unwrap_or(false)
+        }
+        #[cfg(not(unix))]
+        {
+            true
+        }
+    })
 }
 
 /// Represents a captured monitor screenshot with geometry info

@@ -379,7 +379,7 @@ pub async fn show_quick_overlay(
         .inner_size(360.0, 240.0)
         .resizable(true)
         .decorations(true)
-        .background_color(tauri::Color(9, 9, 9, 255))
+        .background_color(tauri::window::Color(9, 9, 9, 255))
         .visible(false)
         .build()
         .map_err(|e| e.to_string())?
