@@ -15,8 +15,6 @@ AppDir/
 *.dmg
 
 # Environment
-.env
-.env.local
 .env.*.local
 
 # Editor
@@ -38,3 +36,4 @@ coverage/
 # Temp
 *.tmp
 *.temp
+config.bat

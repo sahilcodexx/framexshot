@@ -45,6 +45,7 @@ modules:
   # Optional OCR binary for the OCR capture mode.
   - name: tesseract
     buildsystem: cmake-ninja
+    builddir: true
     config-opts:
       - -DBUILD_TRAINING_TOOLS=OFF
       - -DGRAPHICS_DISABLED=ON
@@ -55,6 +56,7 @@ modules:
     modules:
       - name: leptonica
         buildsystem: cmake-ninja
+        builddir: true
         config-opts:
           - -DBUILD_PROG=OFF
           - -DBUILD_SHARED_LIBS=ON
