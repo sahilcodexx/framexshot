@@ -29,8 +29,10 @@ jobs:
           - platform: windows-latest
             args: ''
             arch: windows
-          - platform: macos-13
-            args: ''
+          # macos-13 (Intel) runners are retired — build Intel via cross-target
+          # on an Apple Silicon runner instead.
+          - platform: macos-14
+            args: --target x86_64-apple-darwin
             arch: macos-x86_64
           - platform: macos-14
             args: ''
@@ -54,6 +56,10 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Intel macOS cross-compile target
+        if: matrix.arch == 'macos-x86_64'
+        run: rustup target add x86_64-apple-darwin
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
