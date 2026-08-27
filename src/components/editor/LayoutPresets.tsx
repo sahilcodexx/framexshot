@@ -61,8 +61,8 @@ function LayoutCard({
             className={`
               relative w-full aspect-[4/3] rounded-xl overflow-hidden border transition-all
               ${active
-                ? "border-white/70 ring-1 ring-white/30 scale-[0.98]"
-                : "border-[#2a2a2a] hover:border-[#555] hover:scale-[0.98]"}
+                ? "border-foreground/70 ring-1 ring-white/30 scale-[0.98]"
+                : "border-border hover:border-border hover:scale-[0.98]"}
               bg-gradient-to-br from-[#2a2030] to-[#1a1520]
             `}
           >
@@ -71,7 +71,7 @@ function LayoutCard({
 
             <div className="absolute inset-0 flex items-center justify-center p-4">
               <div
-                className="w-[62%] aspect-square rounded-lg overflow-hidden shadow-lg border border-white/10 bg-[#333]"
+                className="w-[62%] aspect-square rounded-lg overflow-hidden shadow-lg border border-border bg-secondary"
                 style={{
                   transform: cssTransform,
                   transformStyle: "preserve-3d",
@@ -94,7 +94,7 @@ function LayoutCard({
           {/* Label underneath the card */}
           <span
             className={`text-[10px] font-medium text-center w-full transition-colors ${
-              active ? "text-white" : "text-muted-foreground group-hover:text-white/80"
+              active ? "text-foreground" : "text-muted-foreground group-hover:text-foreground/80"
             }`}
           >
             {label}

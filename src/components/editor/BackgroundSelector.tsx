@@ -90,7 +90,7 @@ const GradientButton = memo(function GradientButton({
       onClick={onSelect}
       aria-label={`Select ${gradient.name} gradient`}
       className={cn(
-        "relative w-full aspect-square rounded-xl transition-all overflow-hidden transform-gpu active:scale-95",
+        "relative w-full aspect-square rounded-xl transition-all duration-[var(--duration-quick)] overflow-hidden transform-gpu active:scale-95",
         isSelected
           ? "ring-2 ring-accent ring-offset-2 ring-offset-card shadow-md scale-[1.02]"
           : "ring-1 ring-border/60 hover:ring-border hover:scale-[1.02]"
@@ -107,7 +107,7 @@ const GradientButton = memo(function GradientButton({
       {isSelected && (
         <div className="absolute inset-0 bg-accent/20 flex items-center justify-center">
           <div className="size-5 rounded-full bg-accent flex items-center justify-center shadow-lg">
-            <svg className="size-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <svg className="size-3 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
             </svg>
           </div>
@@ -175,8 +175,8 @@ export const BackgroundSelector = memo(function BackgroundSelector({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between pb-2 border-b border-[#262626]">
-        <h3 className="text-xs font-semibold text-white tracking-tight">Background</h3>
+      <div className="flex items-center justify-between pb-2 border-b border-border">
+        <h3 className="text-xs font-semibold text-foreground tracking-tight">Background</h3>
         <div>
           <input
             ref={fileInputRef}
@@ -190,7 +190,7 @@ export const BackgroundSelector = memo(function BackgroundSelector({
             variant="secondary"
             size="sm"
             onClick={() => fileInputRef.current?.click()}
-            className="rounded-full text-xs h-7 px-3 bg-[#262626] text-white hover:bg-[#333333] font-medium"
+            className="rounded-full text-xs h-7 px-3 bg-secondary text-foreground hover:bg-secondary/80 font-medium"
           >
             <Upload className="size-3 mr-1.5" aria-hidden="true" />
             Upload Photo

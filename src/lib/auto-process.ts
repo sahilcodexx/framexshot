@@ -48,6 +48,11 @@ export async function processScreenshotWithDefaultBackground(
     const storedImageOffsetX = await store.get<number>("defaultImageOffsetX");
     const storedImageOffsetY = await store.get<number>("defaultImageOffsetY");
 
+    const storedPaddingTop = await store.get<number>("defaultPaddingTop");
+    const storedPaddingBottom = await store.get<number>("defaultPaddingBottom");
+    const storedPaddingLeft = await store.get<number>("defaultPaddingLeft");
+    const storedPaddingRight = await store.get<number>("defaultPaddingRight");
+
     if (storedBgType) settings.backgroundType = storedBgType;
     if (storedCustomColor) settings.customColor = storedCustomColor;
 
@@ -88,6 +93,11 @@ export async function processScreenshotWithDefaultBackground(
     if (storedImageScale !== null && storedImageScale !== undefined) settings.imageScale = storedImageScale;
     if (storedImageOffsetX !== null && storedImageOffsetX !== undefined) settings.imageOffsetX = storedImageOffsetX;
     if (storedImageOffsetY !== null && storedImageOffsetY !== undefined) settings.imageOffsetY = storedImageOffsetY;
+
+    if (storedPaddingTop !== null && storedPaddingTop !== undefined) settings.paddingTop = storedPaddingTop;
+    if (storedPaddingBottom !== null && storedPaddingBottom !== undefined) settings.paddingBottom = storedPaddingBottom;
+    if (storedPaddingLeft !== null && storedPaddingLeft !== undefined) settings.paddingLeft = storedPaddingLeft;
+    if (storedPaddingRight !== null && storedPaddingRight !== undefined) settings.paddingRight = storedPaddingRight;
   } catch (err) {
     console.error("Failed to load default settings:", err);
   }

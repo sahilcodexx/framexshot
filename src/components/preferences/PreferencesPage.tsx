@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Store } from "@tauri-apps/plugin-store";
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowLeft, Folder, FolderOpen, Sliders, Image as ImageIcon, Keyboard, Info, Loader2, Check, Sparkles } from "lucide-react";
+import { ArrowLeft, Folder, FolderOpen, Sliders, Image as ImageIcon, Keyboard, Info, Loader2, Check, Sparkles, Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { BackgroundImageSelector } from "./BackgroundImageSelector";
 import { KeyboardShortcutManager } from "./KeyboardShortcutManager";
 import type { KeyboardShortcut } from "./KeyboardShortcutManager";
+import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
 
 interface PreferencesPageProps {
@@ -30,6 +31,7 @@ export function PreferencesPage({ onBack, onSettingsChange }: PreferencesPagePro
     copyToClipboard: true,
   });
   const [isLoading, setIsLoading] = useState(true);
+  const { theme, setTheme } = useTheme();
 
   // Load settings on mount
   useEffect(() => {
@@ -124,7 +126,7 @@ export function PreferencesPage({ onBack, onSettingsChange }: PreferencesPagePro
   return (
     <main className="h-full flex flex-col md:flex-row bg-canvas text-foreground overflow-hidden font-sans select-none">
       {/* Sidebar Navigation Panel */}
-      <aside className="w-full md:w-64 shrink-0 bg-[#111111] border-b md:border-b-0 md:border-r border-border/60 flex flex-col justify-between p-4">
+      <aside className="w-full md:w-64 shrink-0 bg-sidebar border-b md:border-b-0 md:border-r border-sidebar-border/60 flex flex-col justify-between p-4">
         <div className="space-y-5">
           {/* Header Back Button & App Title */}
           <div className="flex items-center gap-3 pb-2 border-b border-border/40">
@@ -132,7 +134,7 @@ export function PreferencesPage({ onBack, onSettingsChange }: PreferencesPagePro
               variant="ghost"
               size="icon"
               onClick={onBack}
-              className="size-8 rounded-full bg-secondary hover:bg-[#252525] border border-border/60 text-muted-foreground hover:text-foreground shrink-0 transition-colors"
+              className="size-8 rounded-full bg-secondary hover:bg-secondary/80 border border-border/60 text-muted-foreground hover:text-foreground shrink-0 transition-colors"
               aria-label="Back to main"
             >
               <ArrowLeft className="size-4" aria-hidden="true" />
@@ -156,17 +158,17 @@ export function PreferencesPage({ onBack, onSettingsChange }: PreferencesPagePro
                   className={cn(
                     "w-full text-left px-3 py-2.5 rounded-xl font-medium text-xs flex items-center justify-between transition-all duration-150 group",
                     isActive
-                      ? "bg-[#202020] text-foreground font-semibold shadow-sm border border-border/80"
-                      : "text-muted-foreground hover:text-foreground hover:bg-[#181818]"
+                      ? "bg-card text-foreground font-semibold shadow-sm border border-border/80"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
                   )}
                 >
                   <div className="flex items-center gap-2.5">
-                    <span className={cn("transition-colors", isActive ? "text-accent" : "text-muted-foreground group-hover:text-foreground")}>
+                    <span className={cn("transition-colors", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")}>
                       {item.icon}
                     </span>
                     <span>{item.label}</span>
                   </div>
-                  {isActive && <div className="size-1.5 rounded-full bg-accent" />}
+                  {isActive && <div className="size-1.5 rounded-full bg-primary" />}
                 </button>
               );
             })}
@@ -223,11 +225,11 @@ export function PreferencesPage({ onBack, onSettingsChange }: PreferencesPagePro
                     />
                     <Button
                       type="button"
-                      variant="secondary"
+                      variant="default"
                       onClick={handleBrowseFolder}
-                      className="rounded-xl px-3.5 text-xs font-medium flex items-center gap-1.5 bg-[#262626] text-white hover:bg-[#333333] shrink-0"
+                      className="rounded-xl px-3.5 text-xs font-medium flex items-center gap-1.5 shadow-sm shrink-0"
                     >
-                      <FolderOpen className="size-3.5 text-accent" />
+                      <FolderOpen className="size-3.5" />
                       Browse Folder
                     </Button>
                   </div>
@@ -254,6 +256,50 @@ export function PreferencesPage({ onBack, onSettingsChange }: PreferencesPagePro
                     checked={settings.copyToClipboard}
                     onCheckedChange={(checked) => updateSetting("copyToClipboard", checked)}
                   />
+                </div>
+
+                {/* Theme */}
+                <div className="flex items-center justify-between py-2 border-t border-border/30 pt-4">
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-medium text-foreground">
+                      Appearance
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Switch between dark and light theme
+                    </p>
+                  </div>
+                  <div className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary/60 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setTheme("dark")}
+                      aria-label="Dark theme"
+                      aria-pressed={theme === "dark"}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition-colors duration-[var(--duration-quick)]",
+                        theme === "dark"
+                          ? "bg-foreground text-background"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <Moon className="size-3" aria-hidden="true" />
+                      Dark
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTheme("light")}
+                      aria-label="Light theme"
+                      aria-pressed={theme === "light"}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition-colors duration-[var(--duration-quick)]",
+                        theme === "light"
+                          ? "bg-foreground text-background"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <Sun className="size-3" aria-hidden="true" />
+                      Light
+                    </button>
+                  </div>
                 </div>
               </CardContent>
             </Card>

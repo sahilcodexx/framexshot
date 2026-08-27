@@ -23,8 +23,8 @@ export const MockupSelector = memo(function MockupSelector({ windowFrame, onChan
           className={`
             flex flex-col items-center justify-center py-2 px-1 rounded-lg border text-xs transition-colors
             ${windowFrame === mockup.id 
-              ? "bg-[#1a1a1a] border-[#333] text-white" 
-              : "bg-[#0a0a0a] border-transparent text-muted-foreground hover:bg-[#141414] hover:text-white"}
+              ? "bg-card border-border text-foreground" 
+              : "bg-background border-transparent text-muted-foreground hover:bg-secondary hover:text-foreground"}
           `}
         >
           {mockup.icon}

@@ -15,7 +15,7 @@ export function SettingsIcon({ onClick, className, size = "default" }: SettingsI
       size="icon"
       onClick={onClick}
       className={cn(
-        "text-muted-foreground hover:text-foreground hover:bg-secondary",
+        "group text-muted-foreground hover:text-foreground hover:bg-secondary",
         {
           "size-8": size === "sm",
           "size-10": size === "default",
@@ -25,7 +25,10 @@ export function SettingsIcon({ onClick, className, size = "default" }: SettingsI
       )}
       aria-label="Open settings"
     >
-      <Settings className="size-4" aria-hidden="true" />
+      <Settings
+        className="size-4 transition-transform duration-[var(--duration-quick)] ease-[var(--ease-smooth-out)] group-hover:rotate-45 motion-reduce:transition-none"
+        aria-hidden="true"
+      />
     </Button>
   );
 }

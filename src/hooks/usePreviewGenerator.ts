@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from "react";
-import { EditorSettings } from "@/stores/editorStore";
+import { EditorSettings, useEditorStore } from "@/stores/editorStore";
 import { drawAnnotationOnCanvas } from "@/lib/annotation-utils";
 import { Annotation } from "@/types/annotations";
 import {
@@ -241,6 +241,12 @@ export function renderFullCanvas(
     ctx.closePath();
     ctx.clip();
     ctx.drawImage(screenshotImage, 0, 0, scaledWidth, scaledHeight);
+    applyImageAdjustments(ctx, 0, 0, scaledWidth, scaledHeight, {
+      brightness: settings.brightness ?? 0,
+      contrast: settings.contrast ?? 0,
+      saturation: settings.saturation ?? 0,
+      sharpness: settings.sharpness ?? 0,
+    });
     return canvas;
   }
 
@@ -374,6 +380,14 @@ function buildFramedScreenshot(
   // Draw screenshot image scaled to scaledW x scaledH — no cropping!
   imageCtx.drawImage(screenshotImage, 0, headerHeight, scaledW, scaledH);
 
+  // Apply pixel-level image adjustments (brightness, contrast, saturation, sharpness)
+  applyImageAdjustments(imageCtx, 0, headerHeight, scaledW, scaledH, {
+    brightness: settings.brightness ?? 0,
+    contrast: settings.contrast ?? 0,
+    saturation: settings.saturation ?? 0,
+    sharpness: settings.sharpness ?? 0,
+  });
+
   // Apply glass / inset / outline / border frame chrome
   const frameStyle = getFrameStyle(settings.frameStyle || "default");
   const framePaddingOverride = (settings.framePadding !== undefined && settings.framePadding >= 0)
@@ -487,6 +501,119 @@ function applyNoise(canvas: HTMLCanvasElement, noiseAmount: number) {
   ctx.putImageData(imageData, 0, 0);
 }
 
+/**
+ * Apply Brightness, Contrast, Saturation, and Sharpness directly to canvas pixel buffer.
+ * Pure pixel manipulation — 100% compatible with Linux WebKit2GTK, Tauri, Chrome, Firefox.
+ */
+function applyImageAdjustments(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  adjustments: {
+    brightness: number; // -100 to 100
+    contrast: number;   // -100 to 100
+    saturation: number; // -100 to 100
+    sharpness: number;  // 0 to 100
+  }
+) {
+  const { brightness, contrast, saturation, sharpness } = adjustments;
+
+  if (brightness === 0 && contrast === 0 && saturation === 0 && sharpness === 0) {
+    return;
+  }
+
+  const w = Math.round(width);
+  const h = Math.round(height);
+  const startX = Math.round(x);
+  const startY = Math.round(y);
+
+  if (w <= 0 || h <= 0) return;
+
+  try {
+    const imageData = ctx.getImageData(startX, startY, w, h);
+    const data = imageData.data;
+    const len = data.length;
+
+    const contrastClamped = Math.max(-99, Math.min(99, contrast));
+    const cFactor = (259 * (contrastClamped + 255)) / (255 * (259 - contrastClamped));
+    const bOffset = (brightness / 100) * 255;
+    const sFactor = (saturation + 100) / 100;
+
+    const hasColorAdjustments = brightness !== 0 || contrast !== 0 || saturation !== 0;
+
+    if (hasColorAdjustments) {
+      for (let i = 0; i < len; i += 4) {
+        let r = data[i];
+        let g = data[i + 1];
+        let b = data[i + 2];
+
+        // 1. Brightness
+        if (brightness !== 0) {
+          r += bOffset;
+          g += bOffset;
+          b += bOffset;
+        }
+
+        // 2. Contrast
+        if (contrast !== 0) {
+          r = cFactor * (r - 128) + 128;
+          g = cFactor * (g - 128) + 128;
+          b = cFactor * (b - 128) + 128;
+        }
+
+        // 3. Saturation
+        if (saturation !== 0) {
+          const gray = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          r = gray + sFactor * (r - gray);
+          g = gray + sFactor * (g - gray);
+          b = gray + sFactor * (b - gray);
+        }
+
+        // Clamp to valid range [0, 255]
+        data[i] = r < 0 ? 0 : r > 255 ? 255 : r;
+        data[i + 1] = g < 0 ? 0 : g > 255 ? 255 : g;
+        data[i + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
+      }
+    }
+
+    // 4. Sharpness (Unsharp Mask Convolution)
+    if (sharpness > 0) {
+      const src = new Uint8ClampedArray(data);
+      const a = (sharpness / 100) * 0.45;
+      const centerWeight = 1 + 4 * a;
+
+      for (let py = 1; py < h - 1; py++) {
+        const rowOffset = py * w;
+        const topOffset = (py - 1) * w;
+        const bottomOffset = (py + 1) * w;
+
+        for (let px = 1; px < w - 1; px++) {
+          const i = (rowOffset + px) * 4;
+          const iTop = (topOffset + px) * 4;
+          const iBottom = (bottomOffset + px) * 4;
+          const iLeft = (rowOffset + px - 1) * 4;
+          const iRight = (rowOffset + px + 1) * 4;
+
+          const sr = src[i] * centerWeight - a * (src[iTop] + src[iBottom] + src[iLeft] + src[iRight]);
+          data[i] = sr < 0 ? 0 : sr > 255 ? 255 : sr;
+
+          const sg = src[i + 1] * centerWeight - a * (src[iTop + 1] + src[iBottom + 1] + src[iLeft + 1] + src[iRight + 1]);
+          data[i + 1] = sg < 0 ? 0 : sg > 255 ? 255 : sg;
+
+          const sb = src[i + 2] * centerWeight - a * (src[iTop + 2] + src[iBottom + 2] + src[iLeft + 2] + src[iRight + 2]);
+          data[i + 2] = sb < 0 ? 0 : sb > 255 ? 255 : sb;
+        }
+      }
+    }
+
+    ctx.putImageData(imageData, startX, startY);
+  } catch (err) {
+    console.warn("Failed to apply image adjustments:", err);
+  }
+}
+
 export interface PreviewGeneratorOptions {
   screenshotImage: HTMLImageElement | null;
   settings: EditorSettings;
@@ -525,7 +652,13 @@ export function usePreviewGenerator({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
+  // Read the drag flag directly from the store. A selector here would
+  // re-render this hook on every drag pixel; the store's `_isDragging` is
+  // a separate slice that only PillSliders touch, so we can read it via
+  // getState() inside the effect without subscribing.
+  const isDraggingRef = useRef(false);
+
   const previewUrlRef = useRef<string | null>(null);
   const renderIdRef = useRef(0);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -614,7 +747,11 @@ export function usePreviewGenerator({
     }
   }, [screenshotImage, canvasRef, paddingTop, paddingBottom, paddingLeft, paddingRight]);
 
-  // Debounced preview generation + idle detection for effects
+  // Debounced preview generation + idle detection for effects.
+  // While a slider is being dragged, we SKIP the regeneration entirely —
+  // it's the difference between a smooth drag and a stuttery one. The
+  // PillSlider sets `_isDragging` on pointer-down and clears it on
+  // pointer-up; once it clears, the pending settings render immediately.
   useEffect(() => {
     if (!screenshotImage || !canvasRef.current) return;
 
@@ -626,6 +763,14 @@ export function usePreviewGenerator({
 
     // Reset effects flag on every settings change (during drag)
     renderEffectsRef.current = false;
+
+    // While a slider is being dragged, store the latest settings and wait
+    // for the drag to end before doing any canvas work.
+    if (useEditorStore.getState()._isDragging) {
+      isDraggingRef.current = true;
+      return;
+    }
+    isDraggingRef.current = false;
 
     // After 200ms of no changes, enable effects and re-render
     if (effectsTimerRef.current) {
@@ -669,6 +814,10 @@ export function usePreviewGenerator({
     settings.imageScale,
     settings.imageOffsetX,
     settings.imageOffsetY,
+    settings.sharpness,
+    settings.brightness,
+    settings.contrast,
+    settings.saturation,
     paddingTop,
     paddingBottom,
     paddingLeft,
@@ -685,6 +834,26 @@ export function usePreviewGenerator({
       }
     };
   }, []);
+
+  // Subscribe to the drag flag *only* for the rising edge (drag ended).
+  // We use a separate effect so the heavy settings effect above stays cheap
+  // (it doesn't need to re-run every time _isDragging flips).
+  useEffect(() => {
+    const unsub = useEditorStore.subscribe((state, prev) => {
+      const wasDragging = prev._isDragging;
+      const isDraggingNow = state._isDragging;
+      if (wasDragging && !isDraggingNow) {
+        // Drag just ended — render the latest pending settings now (with
+        // effects enabled, so blur/noise/contrast show up too).
+        renderEffectsRef.current = true;
+        if (pendingSettingsRef.current) {
+          generatePreview(pendingSettingsRef.current);
+        }
+      }
+      isDraggingRef.current = isDraggingNow;
+    });
+    return unsub;
+  }, [generatePreview]);
 
   // High quality canvas render for save/copy — same pipeline as preview
   const renderHighQualityCanvas = useCallback(

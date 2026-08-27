@@ -328,7 +328,9 @@ function App() {
 
     try {
       await appWindow.hide();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Capture Screen needs extra time for tray menu / window to fully hide, else it gets captured (see screenshot)
+      const hideDelay = captureMode === "fullscreen" ? 400 : 100;
+      await new Promise((resolve) => setTimeout(resolve, hideDelay));
 
       if (captureMode === "ocr") {
         try {
@@ -930,9 +932,9 @@ function App() {
                 <button
                   onClick={() => handleCapture("region")}
                   disabled={isCapturing}
-                  className="flex flex-col items-center justify-center p-3.5 gap-2 rounded-xl bg-card border border-border hover:bg-secondary hover:border-[#333333] active:scale-[0.98] transition-all group disabled:opacity-50 cursor-pointer"
+                  className="flex flex-col items-center justify-center p-3.5 gap-2 rounded-xl bg-card border border-border hover:bg-secondary hover:border-border active:scale-[0.98] transition-all duration-[var(--duration-fast)] ease-[var(--ease-smooth-out)] group disabled:opacity-50 cursor-pointer"
                 >
-                  <div className="p-2 rounded-lg bg-secondary group-hover:bg-[#262626] transition-colors">
+                  <div className="p-2 rounded-lg bg-secondary group-hover:bg-muted transition-colors duration-[var(--duration-quick)]">
                     <Crop className="size-4 text-foreground" aria-hidden="true" />
                   </div>
                   <div className="flex flex-col items-center gap-0.5 text-center">
@@ -944,9 +946,9 @@ function App() {
                 <button
                   onClick={() => handleCapture("ocr")}
                   disabled={isCapturing}
-                  className="flex flex-col items-center justify-center p-3.5 gap-2 rounded-xl bg-card border border-border hover:bg-secondary hover:border-[#333333] active:scale-[0.98] transition-all group disabled:opacity-50 cursor-pointer"
+                  className="flex flex-col items-center justify-center p-3.5 gap-2 rounded-xl bg-card border border-border hover:bg-secondary hover:border-border active:scale-[0.98] transition-all duration-[var(--duration-fast)] ease-[var(--ease-smooth-out)] group disabled:opacity-50 cursor-pointer"
                 >
-                  <div className="p-2 rounded-lg bg-secondary group-hover:bg-[#262626] transition-colors">
+                  <div className="p-2 rounded-lg bg-secondary group-hover:bg-muted transition-colors duration-[var(--duration-quick)]">
                     <ScanText className="size-4 text-foreground" aria-hidden="true" />
                   </div>
                   <div className="flex flex-col items-center gap-0.5 text-center">
@@ -958,9 +960,9 @@ function App() {
                 <button
                   onClick={() => handleCapture("fullscreen")}
                   disabled={isCapturing}
-                  className="flex flex-col items-center justify-center p-3.5 gap-2 rounded-xl bg-card border border-border hover:bg-secondary hover:border-[#333333] active:scale-[0.98] transition-all group disabled:opacity-50 cursor-pointer"
+                  className="flex flex-col items-center justify-center p-3.5 gap-2 rounded-xl bg-card border border-border hover:bg-secondary hover:border-border active:scale-[0.98] transition-all duration-[var(--duration-fast)] ease-[var(--ease-smooth-out)] group disabled:opacity-50 cursor-pointer"
                 >
-                  <div className="p-2 rounded-lg bg-secondary group-hover:bg-[#262626] transition-colors">
+                  <div className="p-2 rounded-lg bg-secondary group-hover:bg-muted transition-colors duration-[var(--duration-quick)]">
                     <Monitor className="size-4 text-foreground" aria-hidden="true" />
                   </div>
                   <div className="flex flex-col items-center gap-0.5 text-center">
@@ -972,9 +974,9 @@ function App() {
                 <button
                   onClick={() => handleCapture("window")}
                   disabled={isCapturing}
-                  className="flex flex-col items-center justify-center p-3.5 gap-2 rounded-xl bg-card border border-border hover:bg-secondary hover:border-[#333333] active:scale-[0.98] transition-all group disabled:opacity-50 cursor-pointer"
+                  className="flex flex-col items-center justify-center p-3.5 gap-2 rounded-xl bg-card border border-border hover:bg-secondary hover:border-border active:scale-[0.98] transition-all duration-[var(--duration-fast)] ease-[var(--ease-smooth-out)] group disabled:opacity-50 cursor-pointer"
                 >
-                  <div className="p-2 rounded-lg bg-secondary group-hover:bg-[#262626] transition-colors">
+                  <div className="p-2 rounded-lg bg-secondary group-hover:bg-muted transition-colors duration-[var(--duration-quick)]">
                     <AppWindowMac className="size-4 text-foreground" aria-hidden="true" />
                   </div>
                   <div className="flex flex-col items-center gap-0.5 text-center">
@@ -996,9 +998,9 @@ function App() {
             )}
 
             {error && (
-              <div className="p-3.5 bg-[#1c0c0c] border border-[#3a1a1a] rounded-xl space-y-1">
-                <div className="font-medium text-red-400 text-xs">Error</div>
-                <div className="text-red-300/80 text-xs leading-relaxed text-pretty">{error}</div>
+              <div className="p-3.5 bg-destructive/10 border border-destructive/20 rounded-xl space-y-1">
+                <div className="font-medium text-destructive text-xs">Error</div>
+                <div className="text-destructive/80 text-xs leading-relaxed text-pretty">{error}</div>
               </div>
             )}
 

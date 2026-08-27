@@ -69,6 +69,14 @@ export interface EditorSettings {
   imageOffsetX: number;
   /** Screenshot vertical offset in px */
   imageOffsetY: number;
+  /** Image sharpening 0–100% */
+  sharpness: number;
+  /** Image brightness -100–100% */
+  brightness: number;
+  /** Image contrast -100–100% */
+  contrast: number;
+  /** Image saturation -100–100% */
+  saturation: number;
 }
 
 // Snapshot for undo/redo - stores complete state
@@ -91,6 +99,10 @@ interface EditorState {
   // Transient state (not part of history)
   _isInitialized: boolean;
   _historyPaused: boolean;
+  /** True while a slider is being dragged. The preview generator checks
+   *  this to skip the expensive canvas re-render during a drag and only
+   *  re-renders once on commit. Keeps the app responsive. */
+  _isDragging: boolean;
 }
 
 interface EditorActions {
@@ -122,6 +134,10 @@ interface EditorActions {
   setShadowOffsetXTransient: (offsetX: number) => void;
   setShadowOffsetYTransient: (offsetY: number) => void;
   setShadowOpacityTransient: (opacity: number) => void;
+  setSharpnessTransient: (amount: number) => void;
+  setBrightnessTransient: (amount: number) => void;
+  setContrastTransient: (amount: number) => void;
+  setSaturationTransient: (amount: number) => void;
 
   // Commit settings (on slider release)
   setBlurAmount: (amount: number) => void;
@@ -138,6 +154,11 @@ interface EditorActions {
   setShadowOffsetX: (offsetX: number) => void;
   setShadowOffsetY: (offsetY: number) => void;
   setShadowOpacity: (opacity: number) => void;
+  setSharpness: (amount: number) => void;
+  setBrightness: (amount: number) => void;
+  setContrast: (amount: number) => void;
+  setSaturation: (amount: number) => void;
+  resetImageAdjustments: () => void;
 
   // Frame / layout / border / shadow presets
   setFrameStyle: (style: FrameStyleId) => void;
@@ -178,6 +199,9 @@ interface EditorActions {
 
   // Reset
   reset: () => void;
+
+  // Transient UI flags (not part of history)
+  setIsDragging: (dragging: boolean) => void;
 }
 
 export type EditorStore = EditorState & EditorActions;
@@ -221,6 +245,10 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   imageScale: 1.0,
   imageOffsetX: 0,
   imageOffsetY: 0,
+  sharpness: 0,
+  brightness: 0,
+  contrast: 0,
+  saturation: 0,
 };
 
 const INITIAL_STATE: EditorState = {
@@ -230,6 +258,7 @@ const INITIAL_STATE: EditorState = {
   future: [],
   _isInitialized: false,
   _historyPaused: false,
+  _isDragging: false,
 };
 
 // ============================================================================
@@ -260,6 +289,10 @@ export const useEditorStore = create<EditorStore>()(
           const storedNoiseAmount = await store.get<number>("defaultNoiseAmount");
           const storedBorderRadius = await store.get<number>("defaultBorderRadius");
           const storedShadow = await store.get<ShadowSettings>("defaultShadow");
+          const storedSharpness = await store.get<number>("defaultSharpness");
+          const storedBrightness = await store.get<number>("defaultBrightness");
+          const storedContrast = await store.get<number>("defaultContrast");
+          const storedSaturation = await store.get<number>("defaultSaturation");
 
           // Load style settings
           const storedFrameStyle = await store.get<FrameStyleId>("defaultFrameStyle");
@@ -273,6 +306,12 @@ export const useEditorStore = create<EditorStore>()(
           const storedImageScale = await store.get<number>("defaultImageScale");
           const storedImageOffsetX = await store.get<number>("defaultImageOffsetX");
           const storedImageOffsetY = await store.get<number>("defaultImageOffsetY");
+
+          // Load padding defaults
+          const storedPaddingTop = await store.get<number>("defaultPaddingTop");
+          const storedPaddingBottom = await store.get<number>("defaultPaddingBottom");
+          const storedPaddingLeft = await store.get<number>("defaultPaddingLeft");
+          const storedPaddingRight = await store.get<number>("defaultPaddingRight");
 
           set((state) => {
             // Apply background settings from preferences only
@@ -320,6 +359,18 @@ export const useEditorStore = create<EditorStore>()(
             if (storedShadow) {
               state.settings.shadow = storedShadow;
             }
+            if (storedSharpness !== null && storedSharpness !== undefined) {
+              state.settings.sharpness = storedSharpness;
+            }
+            if (storedBrightness !== null && storedBrightness !== undefined) {
+              state.settings.brightness = storedBrightness;
+            }
+            if (storedContrast !== null && storedContrast !== undefined) {
+              state.settings.contrast = storedContrast;
+            }
+            if (storedSaturation !== null && storedSaturation !== undefined) {
+              state.settings.saturation = storedSaturation;
+            }
 
             // Apply style settings
             if (storedFrameStyle) state.settings.frameStyle = storedFrameStyle;
@@ -344,6 +395,20 @@ export const useEditorStore = create<EditorStore>()(
             }
             if (storedImageOffsetY !== null && storedImageOffsetY !== undefined) {
               state.settings.imageOffsetY = storedImageOffsetY;
+            }
+
+            // Apply padding defaults
+            if (storedPaddingTop !== null && storedPaddingTop !== undefined) {
+              state.settings.paddingTop = storedPaddingTop;
+            }
+            if (storedPaddingBottom !== null && storedPaddingBottom !== undefined) {
+              state.settings.paddingBottom = storedPaddingBottom;
+            }
+            if (storedPaddingLeft !== null && storedPaddingLeft !== undefined) {
+              state.settings.paddingLeft = storedPaddingLeft;
+            }
+            if (storedPaddingRight !== null && storedPaddingRight !== undefined) {
+              state.settings.paddingRight = storedPaddingRight;
             }
 
             state._isInitialized = true;
@@ -590,6 +655,30 @@ export const useEditorStore = create<EditorStore>()(
         });
       },
 
+      setSharpnessTransient: (amount) => {
+        set((state) => {
+          state.settings.sharpness = amount;
+        });
+      },
+
+      setBrightnessTransient: (amount) => {
+        set((state) => {
+          state.settings.brightness = amount;
+        });
+      },
+
+      setContrastTransient: (amount) => {
+        set((state) => {
+          state.settings.contrast = amount;
+        });
+      },
+
+      setSaturationTransient: (amount) => {
+        set((state) => {
+          state.settings.saturation = amount;
+        });
+      },
+
       // ========================================
       // Slider Settings - Commit (on release)
       // ========================================
@@ -675,6 +764,31 @@ export const useEditorStore = create<EditorStore>()(
         });
       },
 
+      setSharpness: (amount) => {
+        get().updateSettings({ sharpness: amount });
+      },
+
+      setBrightness: (amount) => {
+        get().updateSettings({ brightness: amount });
+      },
+
+      setContrast: (amount) => {
+        get().updateSettings({ contrast: amount });
+      },
+
+      setSaturation: (amount) => {
+        get().updateSettings({ saturation: amount });
+      },
+
+      resetImageAdjustments: () => {
+        get().updateSettings({
+          sharpness: 0,
+          brightness: 0,
+          contrast: 0,
+          saturation: 0,
+        });
+      },
+
       // ========================================
       // Persist Effect Settings
       // ========================================
@@ -704,6 +818,17 @@ export const useEditorStore = create<EditorStore>()(
           await store.set("defaultNoiseAmount", state.settings.noiseAmount);
           await store.set("defaultBorderRadius", state.settings.borderRadius);
           await store.set("defaultShadow", state.settings.shadow);
+          await store.set("defaultSharpness", state.settings.sharpness);
+          await store.set("defaultBrightness", state.settings.brightness);
+          await store.set("defaultContrast", state.settings.contrast);
+          await store.set("defaultSaturation", state.settings.saturation);
+
+          // Padding — all four sides. The user explicitly adjusts the
+          // padding slider and expects "Set as Default" to remember it.
+          await store.set("defaultPaddingTop", state.settings.paddingTop);
+          await store.set("defaultPaddingBottom", state.settings.paddingBottom);
+          await store.set("defaultPaddingLeft", state.settings.paddingLeft);
+          await store.set("defaultPaddingRight", state.settings.paddingRight);
 
           // Style settings
           await store.set("defaultFrameStyle", state.settings.frameStyle);
@@ -804,6 +929,12 @@ export const useEditorStore = create<EditorStore>()(
         });
       },
 
+      setIsDragging: (dragging) => {
+        set((state) => {
+          state._isDragging = dragging;
+        });
+      },
+
       undo: () => {
         const state = get();
         if (state.past.length === 0) return;
@@ -862,6 +993,7 @@ export const useEditorStore = create<EditorStore>()(
 
 // Settings selectors
 export const useSettings = () => useEditorStore((state) => state.settings);
+export const useCustomColor = () => useEditorStore((state) => state.settings.customColor);
 export const useBackgroundType = () => useEditorStore((state) => state.settings.backgroundType);
 export const useBlurAmount = () => useEditorStore((state) => state.settings.blurAmount);
 export const useNoiseAmount = () => useEditorStore((state) => state.settings.noiseAmount);
@@ -889,6 +1021,10 @@ export const useFrameOpacity = () => useEditorStore((state) => state.settings.fr
 export const useImageScale = () => useEditorStore((state) => state.settings.imageScale);
 export const useImageOffsetX = () => useEditorStore((state) => state.settings.imageOffsetX);
 export const useImageOffsetY = () => useEditorStore((state) => state.settings.imageOffsetY);
+export const useSharpness = () => useEditorStore((state) => state.settings.sharpness ?? 0);
+export const useBrightness = () => useEditorStore((state) => state.settings.brightness ?? 0);
+export const useContrast = () => useEditorStore((state) => state.settings.contrast ?? 0);
+export const useSaturation = () => useEditorStore((state) => state.settings.saturation ?? 0);
 
 // Annotation selectors
 export const useAnnotations = () => useEditorStore((state) => state.annotations);
@@ -949,6 +1085,15 @@ export const editorActions = {
   get setShadowOffsetYTransient() { return useEditorStore.getState().setShadowOffsetYTransient; },
   get setShadowOpacity() { return useEditorStore.getState().setShadowOpacity; },
   get setShadowOpacityTransient() { return useEditorStore.getState().setShadowOpacityTransient; },
+  get setSharpness() { return useEditorStore.getState().setSharpness; },
+  get setSharpnessTransient() { return useEditorStore.getState().setSharpnessTransient; },
+  get setBrightness() { return useEditorStore.getState().setBrightness; },
+  get setBrightnessTransient() { return useEditorStore.getState().setBrightnessTransient; },
+  get setContrast() { return useEditorStore.getState().setContrast; },
+  get setContrastTransient() { return useEditorStore.getState().setContrastTransient; },
+  get setSaturation() { return useEditorStore.getState().setSaturation; },
+  get setSaturationTransient() { return useEditorStore.getState().setSaturationTransient; },
+  get resetImageAdjustments() { return useEditorStore.getState().resetImageAdjustments; },
   get saveEffectSettingsAsDefaults() { return useEditorStore.getState().saveEffectSettingsAsDefaults; },
   get addAnnotation() { return useEditorStore.getState().addAnnotation; },
   get updateAnnotation() { return useEditorStore.getState().updateAnnotation; },
@@ -961,6 +1106,7 @@ export const editorActions = {
   get pauseHistory() { return useEditorStore.getState().pauseHistory; },
   get resumeHistory() { return useEditorStore.getState().resumeHistory; },
   get reset() { return useEditorStore.getState().reset; },
+  get setIsDragging() { return useEditorStore.getState().setIsDragging; },
 };
 
 // Hook version - returns the stable actions object

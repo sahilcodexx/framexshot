@@ -14,6 +14,20 @@ interface EffectsPanelProps {
   paddingLeft: number;
   paddingRight: number;
   shadow: ShadowSettings;
+  // Image Quality Adjustments
+  sharpness?: number;
+  brightness?: number;
+  contrast?: number;
+  saturation?: number;
+  onSharpnessChangeTransient?: (value: number) => void;
+  onBrightnessChangeTransient?: (value: number) => void;
+  onContrastChangeTransient?: (value: number) => void;
+  onSaturationChangeTransient?: (value: number) => void;
+  onSharpnessChange?: (value: number) => void;
+  onBrightnessChange?: (value: number) => void;
+  onContrastChange?: (value: number) => void;
+  onSaturationChange?: (value: number) => void;
+  onResetImageAdjustments?: () => void;
   // Transient handlers (during drag) - for visual feedback
   onBlurAmountChangeTransient?: (value: number) => void;
   onNoiseChangeTransient?: (value: number) => void;
@@ -62,6 +76,19 @@ export const EffectsPanel = memo(function EffectsPanel({
   paddingLeft,
   paddingRight,
   shadow,
+  sharpness = 0,
+  brightness = 0,
+  contrast = 0,
+  saturation = 0,
+  onSharpnessChangeTransient,
+  onBrightnessChangeTransient,
+  onContrastChangeTransient,
+  onSaturationChangeTransient,
+  onSharpnessChange,
+  onBrightnessChange,
+  onContrastChange,
+  onSaturationChange,
+  onResetImageAdjustments,
   onBlurAmountChangeTransient,
   onNoiseChangeTransient,
   onPaddingTopChangeTransient,
@@ -173,6 +200,125 @@ export const EffectsPanel = memo(function EffectsPanel({
 
   return (
     <div className="space-y-6">
+      {/* Image Quality & Enhancements */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium text-foreground font-mono text-balance">Image Quality</h3>
+          {onResetImageAdjustments && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={onResetImageAdjustments}
+                    className="p-1 rounded hover:bg-secondary transition-colors"
+                    aria-label="Reset image adjustments"
+                  >
+                    <RotateCcw className="size-3.5 text-muted-foreground hover:text-foreground transition-colors" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Reset image quality adjustments to zero</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          {/* Sharpness */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <label className="text-xs text-muted-foreground font-medium cursor-help">Sharpness</label>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-48">
+                    <p className="text-xs text-pretty">Sharpen text and fine details in blurry screenshots.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <span className="text-xs text-muted-foreground font-mono tabular-nums">{sharpness}%</span>
+            </div>
+            <Slider
+              value={[sharpness]}
+              onValueChange={(value) => onSharpnessChangeTransient?.(value[0])}
+              onValueCommit={(value) => onSharpnessChange?.(value[0])}
+              min={0}
+              max={100}
+              step={1}
+              className="w-full"
+            />
+          </div>
+
+          {/* Brightness */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-muted-foreground font-medium">Brightness</label>
+              <span className="text-xs text-muted-foreground font-mono tabular-nums">
+                {brightness > 0 ? `+${brightness}` : brightness}%
+              </span>
+            </div>
+            <Slider
+              value={[brightness]}
+              onValueChange={(value) => onBrightnessChangeTransient?.(value[0])}
+              onValueCommit={(value) => onBrightnessChange?.(value[0])}
+              min={-100}
+              max={100}
+              step={1}
+              className="w-full"
+            />
+          </div>
+
+          {/* Contrast */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <label className="text-xs text-muted-foreground font-medium cursor-help">Contrast</label>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-48">
+                    <p className="text-xs text-pretty">Increase contrast to make text pop against background colors.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <span className="text-xs text-muted-foreground font-mono tabular-nums">
+                {contrast > 0 ? `+${contrast}` : contrast}%
+              </span>
+            </div>
+            <Slider
+              value={[contrast]}
+              onValueChange={(value) => onContrastChangeTransient?.(value[0])}
+              onValueCommit={(value) => onContrastChange?.(value[0])}
+              min={-100}
+              max={100}
+              step={1}
+              className="w-full"
+            />
+          </div>
+
+          {/* Saturation */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-muted-foreground font-medium">Saturation</label>
+              <span className="text-xs text-muted-foreground font-mono tabular-nums">
+                {saturation > 0 ? `+${saturation}` : saturation}%
+              </span>
+            </div>
+            <Slider
+              value={[saturation]}
+              onValueChange={(value) => onSaturationChangeTransient?.(value[0])}
+              onValueCommit={(value) => onSaturationChange?.(value[0])}
+              min={-100}
+              max={100}
+              step={1}
+              className="w-full"
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Background Effects */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">

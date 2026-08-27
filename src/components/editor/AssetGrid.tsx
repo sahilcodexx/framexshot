@@ -5,6 +5,14 @@ import { Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getThumbnailUrl } from "@/lib/thumbnail-utils";
 import { Button } from "@/components/ui/button";
+import { Reveal, Skeleton } from "@/lib/motion";
+
+/**
+ * Emil's stagger rule: keep total stagger under ~300ms, so cap the delay at
+ * 8 items. The 9th+ items reveal at the same time as the 8th.
+ */
+const STAGGER_STEP_MS = 32;
+const STAGGER_CAP_INDEX = 8;
 
 export interface Asset {
   id: string;
@@ -36,9 +44,11 @@ const ThumbnailButton = memo(function ThumbnailButton({
   onRemove?: () => void;
 }) {
   const [thumbSrc, setThumbSrc] = useState<string>(asset.src);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
+    setLoaded(false);
     getThumbnailUrl(asset.src, 140).then((url) => {
       if (isMounted) setThumbSrc(url);
     });
@@ -54,23 +64,29 @@ const ThumbnailButton = memo(function ThumbnailButton({
         onClick={onSelect}
         aria-label={`Select ${asset.name} background`}
         className={cn(
-          "relative w-full aspect-square rounded-xl overflow-hidden transition-all duration-150 transform-gpu active:scale-95",
+          "relative w-full aspect-square rounded-xl overflow-hidden transition-all duration-[var(--duration-quick)] transform-gpu active:scale-95",
           isSelected
             ? "ring-2 ring-accent ring-offset-2 ring-offset-card shadow-md scale-[1.02]"
             : "ring-1 ring-border/60 hover:ring-border hover:scale-[1.02]"
         )}
       >
+        {/* Skeleton placeholder while the image is being decoded */}
+        {!loaded && <Skeleton className="absolute inset-0 rounded-xl" />}
         <img
           src={thumbSrc}
           alt={asset.name}
           loading="lazy"
           decoding="async"
-          className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+          onLoad={() => setLoaded(true)}
+          className={cn(
+            "w-full h-full object-cover transition-all duration-[var(--duration-fast)] ease-[var(--ease-smooth-out)] group-hover:scale-105",
+            loaded ? "opacity-100" : "opacity-0"
+          )}
         />
         {isSelected && (
           <div className="absolute inset-0 bg-accent/20 flex items-center justify-center">
             <div className="size-5 rounded-full bg-accent flex items-center justify-center shadow-lg">
-              <svg className="size-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <svg className="size-3 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
               </svg>
             </div>
@@ -84,7 +100,7 @@ const ThumbnailButton = memo(function ThumbnailButton({
             e.stopPropagation();
             onRemove();
           }}
-          className="absolute -top-1.5 -right-1.5 size-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md z-10 hover:scale-110"
+          className="absolute -top-1.5 -right-1.5 size-5 bg-red-500 text-foreground rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md z-10 hover:scale-110"
           aria-label="Remove uploaded image"
         >
           <X className="size-3 stroke-[3]" aria-hidden="true" />
@@ -173,8 +189,8 @@ export const AssetGrid = memo(function AssetGrid({ categories, selectedImage, ba
   return (
     <div className="space-y-5">
       {/* Top Header & Upload Button */}
-      <div className="flex items-center justify-between pb-2 border-b border-[#262626]">
-        <h3 className="text-xs font-semibold text-white tracking-tight">Wallpapers & Media</h3>
+      <div className="flex items-center justify-between pb-2 border-b border-border">
+        <h3 className="text-xs font-semibold text-foreground tracking-tight">Wallpapers & Media</h3>
         <div>
           <input
             ref={fileInputRef}
@@ -188,7 +204,7 @@ export const AssetGrid = memo(function AssetGrid({ categories, selectedImage, ba
             variant="secondary"
             size="sm"
             onClick={() => fileInputRef.current?.click()}
-            className="rounded-full text-xs h-7 px-3 bg-[#262626] text-white hover:bg-[#333333] font-medium"
+            className="rounded-full text-xs h-7 px-3 bg-secondary text-foreground hover:bg-secondary/80 font-medium"
           >
             <Upload className="size-3 mr-1.5" aria-hidden="true" />
             Upload
@@ -204,13 +220,18 @@ export const AssetGrid = memo(function AssetGrid({ categories, selectedImage, ba
           </span>
           <div className="grid grid-cols-4 gap-2">
             {uploadedImages.map((img, index) => (
-              <ThumbnailButton
+              <Reveal
                 key={`uploaded-${index}`}
-                asset={{ id: `uploaded-${index}`, src: img, name: `Custom ${index + 1}` }}
-                isSelected={backgroundType === "image" && selectedImage === img}
-                onSelect={() => onImageSelect(img)}
-                onRemove={() => handleRemoveUploaded(index)}
-              />
+                delay={Math.min(index, STAGGER_CAP_INDEX) * STAGGER_STEP_MS}
+                duration={220}
+              >
+                <ThumbnailButton
+                  asset={{ id: `uploaded-${index}`, src: img, name: `Custom ${index + 1}` }}
+                  isSelected={backgroundType === "image" && selectedImage === img}
+                  onSelect={() => onImageSelect(img)}
+                  onRemove={() => handleRemoveUploaded(index)}
+                />
+              </Reveal>
             ))}
           </div>
         </div>
@@ -223,13 +244,18 @@ export const AssetGrid = memo(function AssetGrid({ categories, selectedImage, ba
             {category.name}
           </span>
           <div className="grid grid-cols-4 gap-2">
-            {category.assets.map((asset) => (
-              <ThumbnailButton
+            {category.assets.map((asset, index) => (
+              <Reveal
                 key={asset.id}
-                asset={asset}
-                isSelected={backgroundType === "image" && selectedImage === asset.src}
-                onSelect={() => onImageSelect(asset.src)}
-              />
+                delay={Math.min(index, STAGGER_CAP_INDEX) * STAGGER_STEP_MS}
+                duration={220}
+              >
+                <ThumbnailButton
+                  asset={asset}
+                  isSelected={backgroundType === "image" && selectedImage === asset.src}
+                  onSelect={() => onImageSelect(asset.src)}
+                />
+              </Reveal>
             ))}
           </div>
         </div>

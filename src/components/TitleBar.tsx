@@ -1,20 +1,23 @@
+import type { ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const appWindow = getCurrentWindow();
 
-export function TitleBar() {
+interface TitleBarProps {
+  /** Optional controls (e.g. Cancel / Copy / Export) rendered on the right
+   *  side of the bar. Buttons are still clickable because Tauri only treats
+   *  the empty area of the drag region as draggable. */
+  rightActions?: ReactNode;
+}
+
+export function TitleBar({ rightActions }: TitleBarProps) {
   return (
     <div
       data-tauri-drag-region
-      className="flex items-center h-[38px] shrink-0 select-none relative"
-      style={{
-        background: "linear-gradient(180deg, #2a2a2a 0%, #1e1e1e 100%)",
-        borderBottom: "1px solid #111",
-        boxShadow: "0 1px 0 rgba(255,255,255,0.04) inset, 0 1px 3px rgba(0,0,0,0.5)",
-      }}
+      className="flex items-center h-8 shrink-0 select-none relative px-3 bg-transparent"
     >
-      {/* Mac-style traffic light buttons — left aligned */}
-      <div className="flex items-center gap-[7px] px-[14px] z-10">
+      {/* Mac-style traffic light buttons — left aligned, no bar background */}
+      <div className="flex items-center gap-[7px] z-10 py-2">
         {/* Close — red */}
         <button
           onClick={() => appWindow.close()}
@@ -30,7 +33,7 @@ export function TitleBar() {
               borderRadius: "50%",
               background: "radial-gradient(circle at 40% 35%, #ff7e72, #e0443a)",
               boxShadow: "0 0 0 0.5px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.25)",
-              transition: "filter 0.15s",
+              transition: "filter var(--duration-quick) var(--ease-out)",
             }}
             className="group-hover:brightness-110"
           />
@@ -60,7 +63,7 @@ export function TitleBar() {
               borderRadius: "50%",
               background: "radial-gradient(circle at 40% 35%, #ffda6a, #d8952a)",
               boxShadow: "0 0 0 0.5px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.25)",
-              transition: "filter 0.15s",
+              transition: "filter var(--duration-quick) var(--ease-out)",
             }}
             className="group-hover:brightness-110"
           />
@@ -92,7 +95,7 @@ export function TitleBar() {
               borderRadius: "50%",
               background: "radial-gradient(circle at 40% 35%, #77e382, #29a642)",
               boxShadow: "0 0 0 0.5px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.25)",
-              transition: "filter 0.15s",
+              transition: "filter var(--duration-quick) var(--ease-out)",
             }}
             className="group-hover:brightness-110"
           />
@@ -107,23 +110,12 @@ export function TitleBar() {
         </button>
       </div>
 
-      {/* Centered app title */}
-      <div
-        data-tauri-drag-region
-        className="absolute inset-0 flex items-center justify-center pointer-events-none"
-      >
-        <span
-          style={{
-            fontSize: 12,
-            fontWeight: 500,
-            letterSpacing: "0.01em",
-            color: "rgba(255,255,255,0.55)",
-            userSelect: "none",
-          }}
-        >
-          FrameXShot
-        </span>
-      </div>
+      {/* Right side — action buttons (still clickable inside the drag region) */}
+      {rightActions && (
+        <div className="ml-auto z-10 flex items-center gap-1.5">
+          {rightActions}
+        </div>
+      )}
     </div>
   );
 }

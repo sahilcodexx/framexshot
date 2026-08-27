@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Slider } from "@/components/ui/slider";
+import { PillSlider } from "@/components/ui/pill-slider";
 import { Eye, EyeOff, Sun } from "lucide-react";
 import type { ShadowPresetId } from "@/lib/frame-presets";
 import { SHADOW_PRESETS } from "@/lib/frame-presets";
@@ -21,6 +21,8 @@ interface ShadowPresetsProps {
   /** When true, show the advanced blur/offset sliders below */
   showAdvanced?: boolean;
   children?: React.ReactNode;
+  /** Signals drag start/end so the preview generator can skip work. */
+  onIsDraggingChange?: (dragging: boolean) => void;
 }
 
 /** Human-friendly names and descriptions for shadow presets */
@@ -33,10 +35,10 @@ const SHADOW_META: Record<ShadowPresetId, { label: string; description: string }
 
 function ShadowSwatch({ id, active }: { id: ShadowPresetId; active: boolean }) {
   const ring = active
-    ? "border-white/70 ring-2 ring-white/30 scale-[0.97]"
-    : "border-[#2a2a2a] hover:border-[#555] hover:scale-[0.97]";
+    ? "border-foreground/70 ring-2 ring-ring/30 scale-[0.97]"
+    : "border-border hover:border-border hover:scale-[0.97]";
 
-  const base = `relative w-full aspect-square rounded-xl border bg-[#2a2a2a] overflow-hidden transition-all ${ring}`;
+  const base = `relative w-full aspect-square rounded-xl border bg-secondary overflow-hidden transition-all ${ring}`;
 
   switch (id) {
     case "none":
@@ -64,7 +66,7 @@ function ShadowSwatch({ id, active }: { id: ShadowPresetId; active: boolean }) {
       return (
         <div className={`${base} bg-gradient-to-br from-[#ff7a5c] to-[#c44]`}>
           {/* coloured shadow matching background */}
-          <div className="absolute inset-[22%] rounded-md bg-white/90 shadow-[6px_14px_30px_rgba(140,30,20,0.65)]" />
+          <div className="absolute inset-[22%] rounded-md bg-foreground/90 shadow-[6px_14px_30px_rgba(140,30,20,0.65)]" />
         </div>
       );
     default:
@@ -81,6 +83,7 @@ export const ShadowPresets = memo(function ShadowPresets({
   onOpacityChange,
   onToggleMockup,
   children,
+  onIsDraggingChange,
 }: ShadowPresetsProps) {
   return (
     <div className="space-y-5">
@@ -102,7 +105,7 @@ export const ShadowPresets = memo(function ShadowPresets({
                     <ShadowSwatch id={preset.id} active={active} />
                     <span
                       className={`text-[10px] font-medium truncate w-full text-center transition-colors ${
-                        active ? "text-white" : "text-muted-foreground group-hover:text-white/80"
+                        active ? "text-foreground" : "text-muted-foreground group-hover:text-foreground/80"
                       }`}
                     >
                       {meta.label}
@@ -122,18 +125,16 @@ export const ShadowPresets = memo(function ShadowPresets({
       {/* Opacity */}
       {shadowPreset !== "none" && (
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs text-muted-foreground font-medium">Strength</label>
-            <span className="text-xs text-muted-foreground font-mono tabular-nums">{opacity}%</span>
-          </div>
-          <Slider
-            value={[opacity]}
-            onValueChange={(value) => onOpacityChangeTransient?.(value[0])}
-            onValueCommit={(value) => onOpacityChange(value[0])}
+          <PillSlider
+            label="Strength"
+            value={opacity}
+            displayValue={`${opacity}%`}
             min={0}
             max={100}
             step={1}
-            className="w-full"
+            onChangeTransient={onOpacityChangeTransient}
+            onChange={onOpacityChange}
+            onDragChange={onIsDraggingChange}
           />
         </div>
       )}
@@ -152,8 +153,8 @@ export const ShadowPresets = memo(function ShadowPresets({
           className={`
             w-full flex items-center justify-center gap-2 h-9 rounded-full border text-xs font-medium transition-colors
             ${showMockup
-              ? "bg-[#1a1a1a] border-[#2a2a2a] text-muted-foreground hover:text-white hover:border-[#444]"
-              : "bg-white text-black border-white"}
+              ? "bg-card border-border text-muted-foreground hover:text-foreground hover:border-foreground/20"
+              : "bg-primary text-primary-foreground border-primary"}
           `}
         >
           {showMockup ? (
@@ -171,16 +172,16 @@ export const ShadowPresets = memo(function ShadowPresets({
       </div>
 
       {/* Details footer (informational, matches reference) */}
-      <div className="space-y-2 pt-1 border-t border-[#1a1a1a]">
+      <div className="space-y-2 pt-1 border-t border-border">
         <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
           Details
         </h4>
         <div className="grid grid-cols-2 gap-2 text-[11px]">
-          <div className="rounded-lg bg-[#141414] border border-[#1a1a1a] px-2.5 py-2">
+          <div className="rounded-lg bg-card border border-border px-2.5 py-2">
             <div className="text-muted-foreground">Device</div>
             <div className="text-foreground font-medium mt-0.5">Screen pixels</div>
           </div>
-          <div className="rounded-lg bg-[#141414] border border-[#1a1a1a] px-2.5 py-2">
+          <div className="rounded-lg bg-card border border-border px-2.5 py-2">
             <div className="text-muted-foreground flex items-center gap-1">
               <Sun className="size-3" aria-hidden="true" />
               Screenshot

@@ -37,8 +37,8 @@ function StyleSwatch({ id, active }: { id: FrameStyleId; active: boolean }) {
   const base =
     "relative w-full aspect-square rounded-xl overflow-hidden transition-all border";
   const ring = active
-    ? "border-white/80 ring-2 ring-white/30 shadow-sm scale-[0.97]"
-    : "border-[#2a2a2a] hover:border-[#555] hover:scale-[0.97]";
+    ? "border-foreground/80 ring-2 ring-white/30 shadow-sm scale-[0.97]"
+    : "border-border hover:border-border hover:scale-[0.97]";
 
   switch (id) {
     case "default":
@@ -50,21 +50,21 @@ function StyleSwatch({ id, active }: { id: FrameStyleId; active: boolean }) {
     case "glass-light":
       return (
         <div className={`${base} ${ring} bg-gradient-to-br from-[#f0f4ff] to-[#c8d8ef]`}>
-          <div className="absolute inset-[14%] rounded-lg bg-white/50 border border-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]" />
+          <div className="absolute inset-[14%] rounded-lg bg-foreground/50 border border-foreground/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]" />
           <div className="absolute inset-x-[14%] top-[14%] h-[16%] rounded-t-lg bg-gradient-to-b from-white/60 to-transparent" />
         </div>
       );
     case "glass-dark":
       return (
         <div className={`${base} ${ring} bg-gradient-to-br from-[#2a2a3a] to-[#111118]`}>
-          <div className="absolute inset-[14%] rounded-lg bg-black/50 border border-white/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]" />
+          <div className="absolute inset-[14%] rounded-lg bg-black/50 border border-foreground/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]" />
           <div className="absolute inset-x-[14%] top-[14%] h-[14%] rounded-t-lg bg-gradient-to-b from-white/10 to-transparent" />
         </div>
       );
     case "liquid":
       return (
         <div className={`${base} ${ring} bg-gradient-to-br from-[#ff9a3c] via-[#ff6b1a] to-[#e85d04]`}>
-          <div className="absolute inset-[16%] rounded-lg bg-white/20 border border-orange-200/50" />
+          <div className="absolute inset-[16%] rounded-lg bg-foreground/20 border border-orange-200/50" />
           <div className="absolute inset-[10%] rounded-xl border-2 border-orange-300/40 shadow-[0_0_18px_rgba(255,140,40,0.5)]" />
         </div>
       );
@@ -72,26 +72,26 @@ function StyleSwatch({ id, active }: { id: FrameStyleId; active: boolean }) {
       return (
         <div className={`${base} ${ring} bg-[#eaeaea]`}>
           <div className="absolute inset-[16%] rounded-md bg-white shadow-[inset_0_3px_8px_rgba(0,0,0,0.20)]" />
-          <div className="absolute inset-[13%] rounded-lg border border-white/80 border-b-black/10 border-r-black/10" />
+          <div className="absolute inset-[13%] rounded-lg border border-foreground/80 border-b-black/10 border-r-black/10" />
         </div>
       );
     case "inset-dark":
       return (
         <div className={`${base} ${ring} bg-[#222]`}>
-          <div className="absolute inset-[16%] rounded-md bg-[#111] shadow-[inset_0_3px_10px_rgba(0,0,0,0.7)] border border-white/5" />
-          <div className="absolute inset-[13%] rounded-lg border border-white/5" />
+          <div className="absolute inset-[16%] rounded-md bg-[#111] shadow-[inset_0_3px_10px_rgba(0,0,0,0.7)] border border-foreground/5" />
+          <div className="absolute inset-[13%] rounded-lg border border-foreground/5" />
         </div>
       );
     case "outline":
       return (
-        <div className={`${base} ${ring} bg-[#141414]`}>
-          <div className="absolute inset-[18%] rounded-md border-[2px] border-white/90 bg-transparent" />
+        <div className={`${base} ${ring} bg-card`}>
+          <div className="absolute inset-[18%] rounded-md border-[2px] border-foreground/90 bg-transparent" />
         </div>
       );
     case "border":
       return (
-        <div className={`${base} ${ring} bg-[#141414]`}>
-          <div className="absolute inset-[11%] rounded-md border-[6px] border-white bg-[#2a2a2a]" />
+        <div className={`${base} ${ring} bg-card`}>
+          <div className="absolute inset-[11%] rounded-md border-[6px] border-foreground bg-secondary" />
         </div>
       );
     default:
@@ -134,7 +134,7 @@ export const StyleSelector = memo(function StyleSelector({
                     <StyleSwatch id={style.id} active={active} />
                     <span
                       className={`text-[10px] font-medium truncate w-full text-center transition-colors ${
-                        active ? "text-white" : "text-muted-foreground group-hover:text-white/80"
+                        active ? "text-foreground" : "text-muted-foreground group-hover:text-foreground/80"
                       }`}
                     >
                       {meta.label}
@@ -153,7 +153,7 @@ export const StyleSelector = memo(function StyleSelector({
 
       {/* Padding + Opacity sliders — only shown when a frame style is active */}
       {isStyled && (
-        <div className="space-y-4 pt-1 border-t border-[#1a1a1a]">
+        <div className="space-y-4 pt-1 border-t border-border">
           {/* Padding */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">

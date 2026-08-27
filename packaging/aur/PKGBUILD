@@ -1,0 +1,84 @@
+# Maintainer: Kartik Labhshetwar <kartiklhb@users.noreply.github.com>
+# Contributor: FrameXShot Contributors
+#
+# Arch User Repository package for FrameXShot.
+# Builds from the GitHub source tarball so the binary is compiled against
+# your system libs (webkit2gtk-4.1 etc.) — no AppImage/Flatpak bundling.
+#
+# Submit to AUR:  git push aur@aur.archlinux.org:framexshot
+# Install:        yay -S framexshot   (or: paru -S framexshot)
+
+pkgname=framexshot
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Beautiful, effortless screenshot tool for Linux — capture regions, screens, windows or text (OCR), then edit them with frames, backgrounds, effects and annotations."
+arch=('x86_64' 'aarch64')
+url="https://github.com/sahilcodexx/framexshot"
+license=('MIT')
+depends=(
+  'webkit2gtk-4.1'
+  'gtk3'
+  'libsoup3'
+  'libappindicator-gtk3'
+  'tesseract'
+  'grim'
+  'slurp'
+  'spectacle'
+  'scrot'
+  'maim'
+  'wl-clipboard'
+  'xclip'
+  'xsel'
+  'xdg-desktop-portal'
+  'zenity'
+  'kdialog'
+  'xdotool'
+)
+makedepends=(
+  'nodejs'
+  'pnpm'
+  'rust'
+  'cargo'
+  'gcc'
+  'pkgconf'
+  'glib2'
+  'librsvg'
+  'openssl'
+  'appmenu-gtk-module'
+)
+optdepends=(
+  'cosmic-screenshot: COSMIC desktop capture support'
+)
+source=("$url/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')  # placeholder — replace with real hash before publishing
+validpgpkeys=()
+
+build() {
+  cd "$srcdir/$pkgname-$pkgver"
+
+  # Frontend build (pnpm is the project package manager — npm would miss the lockfile)
+  pnpm install --frozen-lockfile
+  pnpm run build
+
+  # Rust release build with the frontend baked in
+  cargo build --release --locked --manifest-path src-tauri/Cargo.toml
+}
+
+package() {
+  cd "$srcdir/$pkgname-$pkgver"
+
+  install -Dm755 "src-tauri/target/release/framexshot" \
+    "$pkgdir/usr/bin/framexshot"
+
+  install -Dm644 "src-tauri/icons/128x128.png" \
+    "$pkgdir/usr/share/icons/hicolor/128x128/apps/com.framexshot.app.png"
+  install -Dm644 "src-tauri/icons/32x32.png" \
+    "$pkgdir/usr/share/icons/hicolor/32x32/apps/com.framexshot.app.png"
+  install -Dm644 "src-tauri/icons/icon.png" \
+    "$pkgdir/usr/share/icons/hicolor/256x256/apps/com.framexshot.app.png"
+
+  install -Dm644 "flatpak/com.framexshot.app.desktop" \
+    "$pkgdir/usr/share/applications/com.framexshot.app.desktop"
+  install -Dm644 "flatpak/com.framexshot.app.metainfo.xml" \
+    "$pkgdir/usr/share/metainfo/com.framexshot.app.metainfo.xml"
+}

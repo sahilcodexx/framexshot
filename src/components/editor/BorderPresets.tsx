@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Slider } from "@/components/ui/slider";
+import { PillSlider } from "@/components/ui/pill-slider";
 import type { BorderPresetId } from "@/lib/frame-presets";
 import { BORDER_PRESETS } from "@/lib/frame-presets";
 import {
@@ -15,6 +15,8 @@ interface BorderPresetsProps {
   onPresetChange: (preset: BorderPresetId) => void;
   onBorderRadiusChangeTransient?: (value: number) => void;
   onBorderRadiusChange: (value: number) => void;
+  /** Signals drag start/end so the preview generator can skip work. */
+  onIsDraggingChange?: (dragging: boolean) => void;
 }
 
 /** Human-friendly labels and descriptions */
@@ -52,6 +54,7 @@ export const BorderPresets = memo(function BorderPresets({
   onPresetChange,
   onBorderRadiusChangeTransient,
   onBorderRadiusChange,
+  onIsDraggingChange,
 }: BorderPresetsProps) {
   return (
     <TooltipProvider delayDuration={300}>
@@ -71,8 +74,8 @@ export const BorderPresets = memo(function BorderPresets({
                     className={`
                       flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-xl border transition-all
                       ${active
-                        ? "bg-[#1a1a1a] border-white/40 text-white scale-[0.97]"
-                        : "bg-[#0a0a0a] border-transparent text-muted-foreground hover:bg-[#141414] hover:text-white hover:scale-[0.97]"}
+                        ? "bg-card border-foreground/40 text-foreground scale-[0.97]"
+                        : "bg-background border-transparent text-muted-foreground hover:bg-secondary hover:text-foreground hover:scale-[0.97]"}
                     `}
                   >
                     {PRESET_ICONS[preset.id]}
@@ -89,18 +92,16 @@ export const BorderPresets = memo(function BorderPresets({
         </div>
 
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs text-muted-foreground font-medium">Corner size</label>
-            <span className="text-xs text-muted-foreground font-mono tabular-nums">{borderRadius}px</span>
-          </div>
-          <Slider
-            value={[borderRadius]}
-            onValueChange={(value) => onBorderRadiusChangeTransient?.(value[0])}
-            onValueCommit={(value) => onBorderRadiusChange(value[0])}
+          <PillSlider
+            label="Corner size"
+            value={borderRadius}
+            displayValue={`${borderRadius}px`}
             min={0}
             max={50}
             step={1}
-            className="w-full"
+            onChangeTransient={onBorderRadiusChangeTransient}
+            onChange={onBorderRadiusChange}
+            onDragChange={onIsDraggingChange}
           />
         </div>
       </div>

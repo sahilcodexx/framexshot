@@ -19,7 +19,9 @@
   - [Annotation Tools](#annotation-tools)
   - [Workflow](#workflow)
 - [Install](#install)
-  - [Download a Release](#download-a-release)
+  - [Arch Linux (AUR)](#arch-linux-aur)
+  - [Universal CLI Installer (all other distros)](#universal-cli-installer-all-other-distros)
+  - [Windows / macOS](#windows--macos)
   - [Build from Source](#build-from-source)
 - [Usage](#usage)
   - [Quick Start](#quick-start)
@@ -33,11 +35,11 @@
 
 ## Overview
 
-FrameXShot is a lightweight, native Linux desktop application designed to replace complex screenshot workflows. It lives in the **system tray**, captures with a keypress, and lets you apply backgrounds, effects, and annotations — all in a slick dark-mode UI powered by Rust + React.
+FrameXShot is a lightweight, native Linux desktop application designed to replace complex screenshot workflows. It lives in the **system tray**, captures with a keypress, and lets you apply backgrounds, effects, and annotations — all in a slick adaptive UI (light/dark via shadcn oklch) powered by Rust + React.
 
 No cloud. No telemetry. Everything happens locally.
 
-**Stack:** Tauri v2 · React 19 · TypeScript 5.8 · Vite 7 · Zustand · Tailwind CSS v4 · xcap (X11/Wayland)
+**Stack:** Tauri v2 · React 19 · TypeScript 5.8 · Vite 7 · Zustand · Tailwind CSS v4 + shadcn oklch (`@custom-variant dark`, `@theme inline`) · xcap (X11/Wayland)
 
 ---
 
@@ -59,10 +61,12 @@ All shortcuts are customisable in Preferences.
 - **Background library** — Curated wallpapers, mac-style assets, mesh gradients, and solid colours
 - **Custom backgrounds** — Pick any hex colour or use a transparent checkerboard
 - **Effects** — Blur + noise sliders with 200 ms idle-commit for silky preview performance
-- **Shadow** — Configurable X/Y offset, blur, and opacity
+- **Shadow** — Configurable X/Y offset, blur, and opacity (minimal in light, heavier in dark)
 - **Border radius** — Pixel-perfect corner rounding
-- **Padding** — Independent top / bottom / left / right control
-- **Export** — High-quality JPEG to disk, or direct clipboard copy
+- **Padding** — Independent top / bottom / left / right control (persists via *Set as Default*, no random jumps)
+- **Floating sidebar** — Detached `rounded-2xl` card (`bg-card` on `bg-canvas`, `shadow-sm` light / `shadow-xl` dark, fills top gap via `-mt-8`)
+- **Cursors** — `pointer` for buttons, `grab/grabbing` for canvas & 2D pad, `ew-resize` for sliders, `crosshair` for drawing
+- **Export** — High-quality JPEG to disk, or direct clipboard copy (Cancel is `destructive` tint)
 
 ### Annotation Tools
 
@@ -74,82 +78,55 @@ All shortcuts are customisable in Preferences.
 
 ### Workflow
 
-- **Global shortcuts** — Capture from anywhere, even when the window is hidden in the tray
+- **Global shortcuts** — Capture from anywhere, even when the window is hidden in the tray (Capture Screen has `400ms` hide delay so tray menu isn't captured)
 - **Auto-apply** — Apply your default background and save without ever opening the editor
 - **Quick Overlay** — A floating preview window that fades out automatically after 5 seconds
 - **System tray** — FrameXShot lives in the tray; close to hide, never quits until you say so
-- **Persistent preferences** — Save directory, shortcut bindings, and defaults survive restarts
+- **Persistent preferences** — Save directory, shortcut bindings, theme (`light`/`dark` via `html.dark` + `settings.json`) and defaults survive restarts
 - **Keep-mounted editor** — The editor stays in the DOM between captures, so state is never lost
+- **Minimal TitleBar** — Dots only (`TitleBar.tsx:13`), transparent `h-8`, `data-tauri-drag-region` default cursor
 
 ---
 
 ## Install
 
-### Download a Release
+FrameXShot builds against your system libraries, so there are no AppImage/Flatpak/deb/rpm bundles to fight with. On Linux you either install from the AUR (Arch-based) or via the universal CLI installer, which installs every dependency through your native package manager and compiles the app from source.
 
-FrameXShot is packaged for all major Linux distributions and architectures.
+### 🏔️ Arch Linux (AUR)
 
-#### 📦 Flatpak (Universal — Recommended)
-
-The Flatpak package is self-contained (bundles its own WebKitGTK 4.1 runtime) and works reliably across all Linux distributions without dependency conflicts:
+For Arch, Manjaro, and EndeavourOS, install from the AUR (any AUR helper works):
 
 ```bash
-# Install Flatpak bundle
-flatpak install ./framexshot_1.0.0_amd64.flatpak
-
-# Run FrameXShot
-flatpak run com.framexshot.app
+yay -S framexshot
+# or: paru -S framexshot
 ```
 
-#### 🌀 Debian / Ubuntu / Pop!_OS / Linux Mint
+The PKGBUILD pulls in the runtime dependencies (`webkit2gtk-4.1`, `gtk3`, `libayatana-appindicator`, `tesseract`, capture tools) automatically.
 
-Download the `.deb` package from [Releases](../../releases):
+### 🐧 Universal CLI Installer (all other distros)
+
+One command installs all build + runtime dependencies via your distro's package manager, downloads the source for the latest release, compiles it, and installs it to `/usr/local`:
 
 ```bash
-sudo apt update
-sudo apt install ./framexshot_1.0.0_amd64.deb
+curl -fsSL https://raw.githubusercontent.com/sahilcodexx/framexshot/main/packaging/install.sh | sh
 ```
 
-*APT automatically installs required dependencies (`libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libayatana-appindicator3-1`, `tesseract-ocr`).*
+**Supported:** Debian 12+ · Ubuntu 22.04+ · Fedora · RHEL/Rocky/Alma/CentOS *(fail with a clear message — they only ship WebKitGTK 4.0)* · openSUSE · Arch/Manjaro (if you prefer not to use the AUR).
 
-#### 🎩 Fedora / RHEL / CentOS Stream / Rocky Linux / AlmaLinux
+**Environment overrides:**
 
-Download the `.rpm` package from [Releases](../../releases):
+| Variable | Purpose |
+|----------|---------|
+| `FXS_VERSION` | Build a specific tag (default: latest release) |
+| `FXS_SKIP_DEPS` | `1` to skip dependency installation |
+| `FXS_NO_SUDO` | `1` to fail instead of prompting for sudo |
+| `FXS_KEEP_SRC` | `1` to keep the source tree in `/tmp` (debugging) |
 
-```bash
-sudo dnf install ./framexshot_1.0.0_x86_64.rpm
-```
+*Debian 11 and Ubuntu 20.04 (and older) can't run Tauri v2 apps — `libwebkit2gtk-4.1-0` doesn't exist there. The installer fails fast with a clear message instead of a confusing package-not-found error.*
 
-#### 🦎 openSUSE (Leap / Tumbleweed)
+### 🖥️ Windows / macOS
 
-Download the `.rpm` or `.AppImage` from [Releases](../../releases):
-
-```bash
-# Via zypper (.rpm)
-sudo zypper install ./framexshot_1.0.0_x86_64.rpm
-```
-
-#### 🏔️ Arch Linux / Manjaro / EndeavourOS
-
-Use the `.AppImage` or build from source:
-
-```bash
-# Make AppImage executable and run
-chmod +x framexshot_1.0.0_amd64.AppImage
-./framexshot_1.0.0_amd64.AppImage
-```
-
-#### 🚀 AppImage (Universal Binary)
-
-Works on any Linux distribution with FUSE installed:
-
-```bash
-chmod +x framexshot_1.0.0_amd64.AppImage
-./framexshot_1.0.0_amd64.AppImage
-
-# If FUSE is not installed on your system (e.g. Ubuntu 22.04+ default minimal setup):
-./framexshot_1.0.0_amd64.AppImage --appimage-extract-and-run
-```
+GitHub Releases ship native installers for Windows (`.exe`/NSIS) and macOS (`.dmg`). Download the installer for your platform from [Releases](../../releases), then run it — no dependencies to install.
 
 ---
 
@@ -189,7 +166,7 @@ sudo pacman -S spectacle grim slurp scrot maim wl-clipboard tesseract xdg-deskto
 sudo zypper install spectacle grim slurp scrot maim wl-clipboard tesseract-ocr xdg-desktop-portal
 ```
 
-*Tip: For optical character recognition (OCR), install `tesseract-ocr` (Debian/Ubuntu) or `tesseract` (Fedora/Arch/openSUSE). The Flatpak bundle ships its own copy — nothing to install.*
+*Tip: For optical character recognition (OCR), install `tesseract-ocr` (Debian/Ubuntu) or `tesseract` (Fedora/Arch/openSUSE). The CLI installer and AUR package pull it in automatically.*
 
 ---
 
@@ -241,45 +218,21 @@ sudo zypper install -y gtk3-devel libwebkit2gtk-4_1-devel \
 
 #### Clone & Build
 
+> **Tip:** Most users never need to do this manually — `packaging/install.sh` handles deps + build + install in one command.
+
 ```bash
 # 1. Clone repository
-git clone https://github.com/kartiklhb/framexshot.git
+git clone https://github.com/sahilcodexx/framexshot.git
 cd framexshot
 
 # 2. Install frontend dependencies
 pnpm install --frozen-lockfile
 
-# 3. Build production bundle (generates AppImage, .deb, .rpm)
+# 3. Build production bundle (generates AppImage, .deb, .rpm for local dev)
 pnpm tauri build
 ```
 
-The compiled packages will be created in `src-tauri/target/release/bundle/`.
-
-#### Build the Flatpak bundle (optional)
-
-Requires `flatpak` + `flatpak-builder` on the host:
-
-```bash
-# 1. Frontend build (embedded into the Rust binary)
-pnpm install --frozen-lockfile
-pnpm run build
-
-# 2. Rust release binary (webview assets are baked in at compile time)
-cargo build --release --manifest-path src-tauri/Cargo.toml
-
-# 3. Install the GNOME 49 runtime (48 is EOL and must not be used)
-flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-flatpak install --user --noninteractive -y flathub org.gnome.Platform//49 org.gnome.Sdk//49
-
-# 4. Build the bundle
-flatpak-builder --user --force-clean --repo=flatpak-repo \
-  flatpak-build-dir flatpak/com.framexshot.app.yml
-
-# 5. Export a single-file bundle and install it
-flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
-  flatpak-repo framexshot.flatpak com.framexshot.app
-flatpak install --user ./framexshot.flatpak
-```
+The compiled packages will be created in `src-tauri/target/release/bundle/`. Note that Linux **releases** only ship the source-build installer above — the AppImage/deb/rpm targets exist for local testing, not distribution.
 
 ---
 
@@ -351,12 +304,13 @@ pnpm test:rust       # cargo test (Rust unit tests)
 
 | Concern | Solution |
 |---------|----------|
-| Capture | `xcap` crate (X11 + Wayland via xdg-desktop-portal) |
-| State | Zustand v5 with **granular selectors** per field |
-| Preview | Synchronous `canvas.toDataURL("image/jpeg", 0.85)` with 200 ms idle-commit |
-| Annotations | Ref-based drag — zero React re-renders during drawing |
-| Editor mount | Keep-mounted (`display: none` when inactive) — no re-mount cost |
+| Capture | `xcap` crate (X11 + Wayland via xdg-desktop-portal), `fullscreen` 400ms hide for tray menu |
+| State | Zustand v5 with **granular selectors** per field, padding respects `defaultPaddingTop` from `settings.json` |
+| Preview | Synchronous `canvas.toDataURL("image/jpeg", 0.85)` with 200 ms idle-commit, centered `flex` loading |
+| Annotations | Ref-based drag — zero React re-renders during drawing, `grab`/`crosshair` cursors |
+| Editor mount | Keep-mounted (`display: none` when inactive) — no re-mount cost, floating sidebar `rounded-2xl` with `-mt-8` top fill |
 | Tray lifecycle | Close → hide to tray; Quit from tray → `app.exit(0)` |
+| Theme | shadcn oklch `light` (`:root`) / `dark` (`.dark`), `@custom-variant dark`, `useTheme` persisting to `settings.json`, no hardcoded `bg-[#xxx]` |
 
 ---
 

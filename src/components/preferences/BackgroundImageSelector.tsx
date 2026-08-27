@@ -45,7 +45,7 @@ const WidescreenThumbnailItem = memo(function WidescreenThumbnailItem({
       onClick={onSelect}
       aria-label={`Select ${title} background`}
       className={cn(
-        "group relative w-full aspect-[16/10] rounded-xl overflow-hidden border transition-all duration-200 transform-gpu active:scale-95 text-left",
+        "group relative w-full aspect-[16/10] rounded-xl overflow-hidden border transition-all duration-[var(--duration-fast)] transform-gpu active:scale-95 text-left",
         isSelected
           ? "border-accent ring-2 ring-accent/60 shadow-lg scale-[1.02]"
           : "border-border/60 hover:border-border hover:scale-[1.02]"
@@ -56,7 +56,7 @@ const WidescreenThumbnailItem = memo(function WidescreenThumbnailItem({
         alt={title}
         loading="lazy"
         decoding="async"
-        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+        className="w-full h-full object-cover transition-transform duration-[var(--duration-medium)] group-hover:scale-105"
       />
 
       {/* Subtle overlay gradient on hover */}
@@ -264,10 +264,10 @@ export function BackgroundImageSelector({ onImageSelect }: BackgroundImageSelect
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                "px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-150 whitespace-nowrap",
+                "px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-[var(--duration-quick)] whitespace-nowrap",
                 activeTab === tab.id
                   ? "bg-accent text-white shadow-sm font-semibold"
-                  : "bg-secondary text-muted-foreground hover:text-foreground hover:bg-[#222222]"
+                  : "bg-secondary text-muted-foreground hover:text-foreground hover:bg-muted"
               )}
             >
               {tab.label}
@@ -288,7 +288,7 @@ export function BackgroundImageSelector({ onImageSelect }: BackgroundImageSelect
             variant="secondary"
             size="sm"
             onClick={() => fileInputRef.current?.click()}
-            className="rounded-full text-xs px-3.5 h-8 font-medium bg-secondary border border-border hover:bg-[#252525]"
+            className="rounded-full text-xs px-3.5 h-8 font-medium bg-secondary border border-border hover:bg-muted"
           >
             <Upload className="size-3 mr-1.5" aria-hidden="true" />
             Upload Photo
@@ -379,7 +379,7 @@ export function BackgroundImageSelector({ onImageSelect }: BackgroundImageSelect
                   onClick={() => handleSolidColorSelect(type)}
                   aria-label={`Select ${label} background`}
                   className={cn(
-                    "group relative w-full aspect-[16/10] rounded-xl overflow-hidden border p-3 flex flex-col justify-between transition-all duration-200 text-left transform-gpu active:scale-95",
+                    "group relative w-full aspect-[16/10] rounded-xl overflow-hidden border p-3 flex flex-col justify-between transition-all duration-[var(--duration-fast)] text-left transform-gpu active:scale-95",
                     backgroundType === type
                       ? "border-accent ring-2 ring-accent/60 shadow-md scale-[1.02]"
                       : "border-border/60 hover:border-border hover:scale-[1.02]"
@@ -402,7 +402,7 @@ export function BackgroundImageSelector({ onImageSelect }: BackgroundImageSelect
                 onClick={() => handleSolidColorSelect("transparent")}
                 aria-label="Select transparent background"
                 className={cn(
-                  "group relative w-full aspect-[16/10] rounded-xl overflow-hidden border p-3 flex flex-col justify-between transition-all duration-200 text-left bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImNoZWNrZXJib2FyZCIgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cmVjdCB3aWR0aD0iNSIgaGVpZ2h0PSI1IiBmaWxsPSIjZmZmIi8+PHJlY3QgeD0iNSIgd2lkdGg9IjUiIGhlaWdodD0iNSIgZmlsbD0iI2UwZTBlMCIvPjxyZWN0IHk9IjUiIHdpZHRoPSI1IiBoZWlnaHQ9IjUiIGZpbGw9IiNlMGUwZTAiLz48cmVjdCB4PSI1IiB5PSI1IiB3aWR0aD0iNSIgaGVpZ2h0PSI1IiBmaWxsPSIjZmZmIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIGZpbGw9InVybCgjY2hlY2tlcmJvYXJkKSIvPjwvc3ZnPg==')] transform-gpu active:scale-95",
+                  "group relative w-full aspect-[16/10] rounded-xl overflow-hidden border p-3 flex flex-col justify-between transition-all duration-[var(--duration-fast)] text-left bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImNoZWNrZXJib2FyZCIgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cmVjdCB3aWR0aD0iNSIgaGVpZ2h0PSI1IiBmaWxsPSIjZmZmIi8+PHJlY3QgeD0iNSIgd2lkdGg9IjUiIGhlaWdodD0iNSIgZmlsbD0iI2UwZTBlMCIvPjxyZWN0IHk9IjUiIHdpZHRoPSI1IiBoZWlnaHQ9IjUiIGZpbGw9IiNlMGUwZTAiLz48cmVjdCB4PSI1IiB5PSI1IiB3aWR0aD0iNSIgaGVpZ2h0PSI1IiBmaWxsPSIjZmZmIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIGZpbGw9InVybCgjY2hlY2tlcmJvYXJkKSIvPjwvc3ZnPg==')] transform-gpu active:scale-95",
                   backgroundType === "transparent"
                     ? "border-accent ring-2 ring-accent/60 shadow-md scale-[1.02]"
                     : "border-border/60 hover:border-border hover:scale-[1.02]"
@@ -421,7 +421,7 @@ export function BackgroundImageSelector({ onImageSelect }: BackgroundImageSelect
               {/* Custom Hex Color Picker Card */}
               <div
                 className={cn(
-                  "relative w-full aspect-[16/10] rounded-xl overflow-hidden border p-3 flex flex-col justify-between transition-all duration-200 text-left transform-gpu active:scale-95 cursor-pointer",
+                  "relative w-full aspect-[16/10] rounded-xl overflow-hidden border p-3 flex flex-col justify-between transition-all duration-[var(--duration-fast)] text-left transform-gpu active:scale-95 cursor-pointer",
                   backgroundType === "custom"
                     ? "border-accent ring-2 ring-accent/60 shadow-md scale-[1.02]"
                     : "border-border/60 hover:border-border hover:scale-[1.02]"

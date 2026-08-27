@@ -1,27 +1,17 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Store } from "@tauri-apps/plugin-store";
 import { toast } from "sonner";
-import { Loader2, Redo2, Undo2, Palette, Image as ImageIcon, LayoutGrid, Box } from "lucide-react";
+import { Loader2, Redo2, Undo2 } from "lucide-react";
 import { TitleBar } from "@/components/TitleBar";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { BackgroundSelector, gradientOptions } from "./editor/BackgroundSelector";
-import { AssetGrid } from "./editor/AssetGrid";
-import { EffectsPanel } from "./editor/EffectsPanel";
-import { MockupSelector } from "./editor/MockupSelector";
-import { StyleSelector } from "./editor/StyleSelector";
-import { LayoutPresets } from "./editor/LayoutPresets";
-import { BorderPresets } from "./editor/BorderPresets";
-import { ShadowPresets } from "./editor/ShadowPresets";
-import { ImagePositionControl } from "./editor/ImagePositionControl";
 import { AnnotationToolbar } from "./editor/AnnotationToolbar";
 import { AnnotationCanvas } from "./editor/AnnotationCanvas";
-import { PropertiesPanel } from "./editor/PropertiesPanel";
+import { RightSidebar } from "./editor/RightSidebar";
 import { Annotation, ToolType } from "@/types/annotations";
 import { usePreviewGenerator } from "@/hooks/usePreviewGenerator";
-import { getAssetCategories } from "@/lib/asset-registry";
-const assetCategories = getAssetCategories();
 import {
   useEditorStore,
   useBackgroundType,
@@ -52,6 +42,10 @@ import {
   useImageScale,
   useImageOffsetX,
   useImageOffsetY,
+  useSharpness,
+  useBrightness,
+  useContrast,
+  useSaturation,
   editorActions,
 } from "@/stores";
 import type { EditorSettings } from "@/stores/editorStore";
@@ -63,7 +57,6 @@ interface ImageEditorProps {
 }
 
 export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
-  // Granular selectors to minimize re-renders
   const backgroundType = useBackgroundType();
   const blurAmount = useBlurAmount();
   const annotations = useAnnotations();
@@ -92,10 +85,13 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
   const imageScale = useImageScale();
   const imageOffsetX = useImageOffsetX();
   const imageOffsetY = useImageOffsetY();
+  const sharpness = useSharpness();
+  const brightness = useBrightness();
+  const contrast = useContrast();
+  const saturation = useSaturation();
   const shadow = useMemo(() => ({ blur: shadowBlur, offsetX: shadowOffsetX, offsetY: shadowOffsetY, opacity: shadowOpacity }), [shadowBlur, shadowOffsetX, shadowOffsetY, shadowOpacity]);
   const customColor = useEditorStore((s: { settings: { customColor: string } }) => s.settings.customColor);
 
-  // Memoized settings object for hooks that need the full shape
   const settings = useMemo(() => ({
     backgroundType: backgroundType as EditorSettings['backgroundType'],
     customColor,
@@ -122,28 +118,27 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
     imageScale,
     imageOffsetX,
     imageOffsetY,
-  }), [backgroundType, customColor, selectedImageSrc, gradientId, blurAmount, noiseAmount, borderRadius, paddingTop, paddingBottom, paddingLeft, paddingRight, shadow, windowFrame, frameStyle, layoutPreset, borderPreset, shadowPreset, showMockup, framePadding, frameOpacity, imageScale, imageOffsetX, imageOffsetY]);
+    sharpness,
+    brightness,
+    contrast,
+    saturation,
+  }), [backgroundType, customColor, selectedImageSrc, gradientId, blurAmount, noiseAmount, borderRadius, paddingTop, paddingBottom, paddingLeft, paddingRight, shadow, windowFrame, frameStyle, layoutPreset, borderPreset, shadowPreset, showMockup, framePadding, frameOpacity, imageScale, imageOffsetX, imageOffsetY, sharpness, brightness, contrast, saturation]);
 
-  // Use stable actions object (not a hook, doesn't cause re-renders)
   const actions = editorActions;
   
-  // Screenshot image state
   const [screenshotImage, setScreenshotImage] = useState<HTMLImageElement | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   
-  // Save/copy state
   const [isSaving, setIsSaving] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const [tempDir, setTempDir] = useState<string>("/private/tmp");
 
-   // Annotation UI state (not part of undo/redo)
-  const [selectedTool, setSelectedTool] = useState<ToolType>("select");
+   const [selectedTool, setSelectedTool] = useState<ToolType>("select");
   const [selectedAnnotation, setSelectedAnnotation] = useState<Annotation | null>(null);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Preview generator hook
   const { previewUrl, error: previewError, renderHighQualityCanvas } = usePreviewGenerator({
     screenshotImage,
     settings,
@@ -155,20 +150,16 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
     imagePath,
   });
 
-  // Combined error
   const error = loadError || previewError;
 
-  // Initialize store on mount
   useEffect(() => {
     editorActions.initialize();
   }, []);
 
-  // Initialize store once on mount
   useEffect(() => {
     editorActions.initialize();
   }, []);
 
-  // Restore window state on mount (keep decorations OFF — we use custom TitleBar)
   useEffect(() => {
     const restoreWindowState = async () => {
       try {
@@ -177,20 +168,17 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
           appWindow.setFullscreen(false),
           appWindow.setAlwaysOnTop(false),
         ]);
-        // Intentionally NOT calling setDecorations(true) — custom TitleBar handles chrome
       } catch (err) {
         console.error("Failed to restore window state:", err);
       }
     };
     restoreWindowState();
 
-    // Get the system temp directory
     invoke<string>("get_temp_directory")
       .then((dir) => setTempDir(dir))
       .catch((err) => console.error("Failed to get temp directory:", err));
   }, []);
 
-  // Load main screenshot image
   useEffect(() => {
     setLoadError(null);
     setImageLoaded(false);
@@ -221,10 +209,21 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
         img.crossOrigin = "anonymous";
       }
 
-      img.onload = () => {
+      img.onload = async () => {
         if (!isMounted) return;
         setScreenshotImage(img);
         setImageLoaded(true);
+
+        // Respect user-saved default padding — don't auto-change after "Set as Default"
+        try {
+          const store = await Store.load("settings.json");
+          const savedTop = await store.get<number>("defaultPaddingTop");
+          if (savedTop !== null && savedTop !== undefined) {
+            return;
+          }
+        } catch {
+          // fall through to auto padding if store read fails
+        }
 
         const avgDimension = (img.width + img.height) / 2;
         const defaultPadding = Math.min(Math.round(avgDimension * 0.1), 400);
@@ -249,7 +248,6 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
     };
   }, [imagePath, actions]);
 
-  // Save handler
   const handleSave = useCallback(async () => {
     if (!screenshotImage || isSaving || isCopying) return;
     
@@ -288,7 +286,6 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
     }
   }, [screenshotImage, annotations, renderHighQualityCanvas, onSave, isSaving, isCopying, imagePath]);
 
-  // Copy handler
   const handleCopy = useCallback(async () => {
     if (!screenshotImage || isSaving || isCopying) return;
     
@@ -324,7 +321,6 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
     }
   }, [screenshotImage, annotations, renderHighQualityCanvas, isSaving, isCopying, tempDir, imagePath]);
 
-  // Annotation handlers
   const handleAnnotationAdd = useCallback((annotation: Annotation) => {
     actions.addAnnotation(annotation);
     setSelectedAnnotation(annotation);
@@ -349,7 +345,6 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
     }
   }, [selectedAnnotation, handleAnnotationDelete]);
 
-  // Undo/Redo handlers
   const handleUndo = useCallback(() => {
     actions.undo();
     setSelectedAnnotation(null);
@@ -360,17 +355,6 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
     setSelectedAnnotation(null);
   }, [actions]);
 
-  const handleResetPadding = useCallback(() => {
-    if (!screenshotImage) return;
-    const avgDimension = (screenshotImage.width + screenshotImage.height) / 2;
-    const defaultPadding = Math.min(Math.round(avgDimension * 0.1), 400);
-    actions.setPaddingTop(defaultPadding);
-    actions.setPaddingBottom(defaultPadding);
-    actions.setPaddingLeft(defaultPadding);
-    actions.setPaddingRight(defaultPadding);
-  }, [actions, screenshotImage]);
-
-  // Delete annotation with keyboard
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
@@ -388,39 +372,32 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedAnnotation, handleAnnotationDelete]);
 
-  // Keyboard shortcuts for save/copy/undo/redo
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip if typing in input fields
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return;
       }
 
-      // Save: Cmd+S
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
         if (imageLoaded && !isSaving && !isCopying) {
           handleSave();
         }
       }
-      // Copy: Cmd+Shift+C
       if ((e.metaKey || e.ctrlKey) && e.key === "c" && e.shiftKey) {
         e.preventDefault();
         if (imageLoaded && !isSaving && !isCopying) {
           handleCopy();
         }
       }
-      // Undo: Cmd+Z
       if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
         e.preventDefault();
         handleUndo();
       }
-      // Redo: Cmd+Shift+Z or Cmd+Y
       if ((e.metaKey || e.ctrlKey) && ((e.key === "z" && e.shiftKey) || e.key === "y")) {
         e.preventDefault();
         handleRedo();
       }
-      // Cancel: Escape
       if (e.key === "Escape") {
         onCancel();
       }
@@ -430,179 +407,13 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [imageLoaded, isSaving, isCopying, handleSave, handleCopy, handleUndo, handleRedo, onCancel]);
 
-  // Find selected gradient for BackgroundSelector
-  const selectedGradientOption = gradientOptions.find(g => g.id === settings.gradientId) || gradientOptions[0];
-
-  // Right sidebar tab state for ultra-smooth performance
-  const [activeTab, setActiveTab] = useState<"bg" | "wallpapers" | "frame" | "layout">("bg");
-
   return (
-    <div className="flex flex-col w-full h-full bg-[#181818] text-foreground font-sans select-none">
-      {/* Custom Mac-style Title Bar */}
+    <div className="flex flex-col w-full h-full bg-background text-foreground font-sans select-none">
       <TitleBar />
 
-      <div className="flex flex-1 min-h-0">
-        {/* Left Sidebar — Actions, Image Transform, Properties, Shadow & Effects */}
-        <div className="w-[280px] xl:w-[320px] shrink-0 border-r border-[#252525] bg-[#1a1a1a] flex flex-col sidebar-scroll transition-all duration-200">
-          {/* Action buttons bar */}
-          <div className="p-3 flex gap-2 border-b border-[#252525] sticky top-0 bg-[#1a1a1a] z-20">
-            <Button 
-              variant="ghost"
-              onClick={onCancel}
-              className="flex-1 h-8 rounded-md bg-[#252525] hover:bg-[#2e2e2e] text-xs font-medium border border-[#333]"
-            >
-              Cancel
-            </Button>
-            <Button 
-              variant="ghost"
-              onClick={handleCopy} 
-              disabled={!imageLoaded || isSaving || isCopying}
-              className="flex-1 h-8 rounded-md bg-[#252525] hover:bg-[#2e2e2e] text-xs font-medium border border-[#333] disabled:opacity-50"
-            >
-              {isCopying ? <Loader2 className="size-3.5 animate-spin" /> : "Copy"}
-            </Button>
-            <Button 
-              variant="default"
-              onClick={handleSave} 
-              disabled={!imageLoaded || isSaving || isCopying}
-              className="flex-1 h-8 rounded-md bg-white text-black hover:bg-white/90 text-xs font-medium disabled:opacity-50"
-            >
-              {isSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Export"}
-            </Button>
-          </div>
-
-          <div className="p-4 space-y-6 pb-10">
-            {/* Image Transform */}
-            <div className="space-y-2.5">
-              <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Image</h3>
-              <ImagePositionControl
-                imageScale={settings.imageScale ?? 1.0}
-                imageOffsetX={settings.imageOffsetX ?? 0}
-                imageOffsetY={settings.imageOffsetY ?? 0}
-                onScaleChangeTransient={actions.setImageScaleTransient}
-                onScaleChange={actions.setImageScale}
-                onOffsetTransient={actions.setImageOffsetTransient}
-                onOffsetCommit={actions.setImageOffset}
-                onReset={actions.resetImageTransform}
-              />
-            </div>
-
-            {/* Properties */}
-            <div className="space-y-2.5">
-              <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Properties</h3>
-              {selectedAnnotation ? (
-                <PropertiesPanel annotation={selectedAnnotation} onUpdate={handleAnnotationUpdate} />
-              ) : (
-                <div className="text-xs text-muted-foreground text-center py-5 bg-[#202020] rounded-lg border border-[#2e2e2e]">
-                  Select an annotation to edit
-                </div>
-              )}
-            </div>
-
-            {/* Shadow */}
-            <div className="space-y-2.5">
-              <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Shadow</h3>
-              <ShadowPresets
-                shadowPreset={settings.shadowPreset || "spread"}
-                opacity={settings.shadow.opacity}
-                showMockup={settings.showMockup !== false}
-                onPresetChange={actions.setShadowPreset}
-                onOpacityChangeTransient={actions.setShadowOpacityTransient}
-                onOpacityChange={actions.setShadowOpacity}
-                onToggleMockup={() => actions.setShowMockup(!(settings.showMockup !== false))}
-              >
-                {settings.shadowPreset !== "none" && (
-                  <div className="space-y-3 pt-1">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs text-muted-foreground font-medium">Blur</label>
-                        <span className="text-xs text-muted-foreground font-mono tabular-nums">{settings.shadow.blur}px</span>
-                      </div>
-                      <EffectsPanel
-                        blurAmount={settings.blurAmount}
-                        noiseAmount={settings.noiseAmount}
-                        paddingTop={settings.paddingTop}
-                        paddingBottom={settings.paddingBottom}
-                        paddingLeft={settings.paddingLeft}
-                        paddingRight={settings.paddingRight}
-                        shadow={settings.shadow}
-                        onBlurAmountChangeTransient={actions.setBlurAmountTransient}
-                        onNoiseChangeTransient={actions.setNoiseAmountTransient}
-                        onPaddingTopChangeTransient={actions.setPaddingTopTransient}
-                        onPaddingBottomChangeTransient={actions.setPaddingBottomTransient}
-                        onPaddingLeftChangeTransient={actions.setPaddingLeftTransient}
-                        onPaddingRightChangeTransient={actions.setPaddingRightTransient}
-                        onAllPaddingChangeTransient={actions.setAllPaddingTransient}
-                        onShadowBlurChangeTransient={actions.setShadowBlurTransient}
-                        onShadowOffsetXChangeTransient={actions.setShadowOffsetXTransient}
-                        onShadowOffsetYChangeTransient={actions.setShadowOffsetYTransient}
-                        onShadowOpacityChangeTransient={actions.setShadowOpacityTransient}
-                        onBlurAmountChange={actions.setBlurAmount}
-                        onNoiseChange={actions.setNoiseAmount}
-                        onPaddingTopChange={actions.setPaddingTop}
-                        onPaddingBottomChange={actions.setPaddingBottom}
-                        onPaddingLeftChange={actions.setPaddingLeft}
-                        onPaddingRightChange={actions.setPaddingRight}
-                        onAllPaddingChange={actions.setAllPadding}
-                        onShadowBlurChange={actions.setShadowBlur}
-                        onShadowOffsetXChange={actions.setShadowOffsetX}
-                        onShadowOffsetYChange={actions.setShadowOffsetY}
-                        onShadowOpacityChange={actions.setShadowOpacity}
-                        onSaveAsDefaults={actions.saveEffectSettingsAsDefaults}
-                        onResetPadding={handleResetPadding}
-                        shadowOnly
-                      />
-                    </div>
-                  </div>
-                )}
-              </ShadowPresets>
-            </div>
-
-            {/* Effects */}
-            <div className="space-y-2.5">
-              <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Effects</h3>
-              <EffectsPanel
-                blurAmount={settings.blurAmount}
-                noiseAmount={settings.noiseAmount}
-                paddingTop={settings.paddingTop}
-                paddingBottom={settings.paddingBottom}
-                paddingLeft={settings.paddingLeft}
-                paddingRight={settings.paddingRight}
-                shadow={settings.shadow}
-                onBlurAmountChangeTransient={actions.setBlurAmountTransient}
-                onNoiseChangeTransient={actions.setNoiseAmountTransient}
-                onPaddingTopChangeTransient={actions.setPaddingTopTransient}
-                onPaddingBottomChangeTransient={actions.setPaddingBottomTransient}
-                onPaddingLeftChangeTransient={actions.setPaddingLeftTransient}
-                onPaddingRightChangeTransient={actions.setPaddingRightTransient}
-                onAllPaddingChangeTransient={actions.setAllPaddingTransient}
-                onShadowBlurChangeTransient={actions.setShadowBlurTransient}
-                onShadowOffsetXChangeTransient={actions.setShadowOffsetXTransient}
-                onShadowOffsetYChangeTransient={actions.setShadowOffsetYTransient}
-                onShadowOpacityChangeTransient={actions.setShadowOpacityTransient}
-                onBlurAmountChange={actions.setBlurAmount}
-                onNoiseChange={actions.setNoiseAmount}
-                onPaddingTopChange={actions.setPaddingTop}
-                onPaddingBottomChange={actions.setPaddingBottom}
-                onPaddingLeftChange={actions.setPaddingLeft}
-                onPaddingRightChange={actions.setPaddingRight}
-                onAllPaddingChange={actions.setAllPadding}
-                onShadowBlurChange={actions.setShadowBlur}
-                onShadowOffsetXChange={actions.setShadowOffsetX}
-                onShadowOffsetYChange={actions.setShadowOffsetY}
-                onShadowOpacityChange={actions.setShadowOpacity}
-                onSaveAsDefaults={actions.saveEffectSettingsAsDefaults}
-                onResetPadding={handleResetPadding}
-                hideShadow
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Center Canvas Area */}
-        <div className="flex-1 flex flex-col relative overflow-hidden bg-[#111111]">
-          {/* Floating Top Toolbar */}
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 bg-[#141414]/90 backdrop-blur-xl p-1.5 rounded-full border border-[#2a2a2a] shadow-2xl">
+      <div className="flex flex-1 min-h-0 bg-canvas">
+        <div className="flex-1 flex flex-col relative overflow-hidden bg-canvas">
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 bg-popover/90 backdrop-blur-xl p-1.5 rounded-full border border-border shadow-md">
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -611,12 +422,12 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
                     size="icon"
                     onClick={handleUndo}
                     disabled={!canUndo}
-                    className="size-8 rounded-full text-muted-foreground hover:text-white disabled:opacity-30"
+                    className="size-8 rounded-full text-muted-foreground hover:text-foreground disabled:opacity-30"
                   >
                     <Undo2 className="size-4" aria-hidden="true" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs bg-[#1a1a1a] border-[#2a2a2a]">Undo ⌘Z</TooltipContent>
+                <TooltipContent side="bottom" className="text-xs bg-popover border-border">Undo ⌘Z</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -625,16 +436,16 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
                     size="icon"
                     onClick={handleRedo}
                     disabled={!canRedo}
-                    className="size-8 rounded-full text-muted-foreground hover:text-white disabled:opacity-30"
+                    className="size-8 rounded-full text-muted-foreground hover:text-foreground disabled:opacity-30"
                   >
                     <Redo2 className="size-4" aria-hidden="true" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs bg-[#1a1a1a] border-[#2a2a2a]">Redo ⌘⇧Z</TooltipContent>
+                <TooltipContent side="bottom" className="text-xs bg-popover border-border">Redo ⌘⇧Z</TooltipContent>
               </Tooltip>
             </TooltipProvider>
 
-            <div className="w-[1px] h-4 bg-[#333] mx-2" />
+            <div className="w-[1px] h-4 bg-border mx-2" />
 
             <AnnotationToolbar
               selectedTool={selectedTool}
@@ -643,9 +454,8 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
             />
           </div>
 
-          {/* Main Canvas */}
           <div className="flex-1 flex items-center justify-center p-4 sm:p-6 md:p-8 lg:p-12 overflow-hidden min-w-0 min-h-0 relative">
-            <div className="w-full h-full flex items-center justify-center min-w-0 min-h-0 z-10">
+            <div className="relative w-full h-full flex items-center justify-center min-w-0 min-h-0 z-10">
               {previewUrl ? (
                 <AnnotationCanvas
                   annotations={annotations}
@@ -660,14 +470,14 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
                   onToolSelect={setSelectedTool}
                 />
               ) : imageLoaded ? (
-                <div className="text-muted-foreground text-sm">Generating preview...</div>
+                <div className="flex items-center justify-center text-muted-foreground text-sm">Generating preview...</div>
               ) : error ? (
-                <div className="text-center text-red-400 p-5">
+                <div className="flex flex-col items-center justify-center text-center text-destructive p-5">
                   <p className="mb-1 text-sm font-medium">Could not load image</p>
                   <small className="text-xs opacity-70">{error}</small>
                 </div>
               ) : (
-                <div className="text-muted-foreground text-sm flex items-center gap-2">
+                <div className="flex items-center justify-center text-muted-foreground text-sm gap-2">
                   <Loader2 className="size-4 animate-spin" />
                   Loading image...
                 </div>
@@ -675,153 +485,47 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
               <canvas ref={canvasRef} style={{ display: "none" }} />
             </div>
           </div>
+
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 bg-popover/90 backdrop-blur-xl px-1.5 py-1.5 rounded-full border border-border shadow-lg">
+            <Button
+              variant="ghost"
+              onClick={onCancel}
+              className="h-8 rounded-full text-xs font-medium bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/20 hover:text-destructive hover:border-destructive/30 px-4"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={handleCopy}
+              disabled={!imageLoaded || isSaving || isCopying}
+              className="h-8 rounded-full text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary border border-transparent hover:border-border px-4 disabled:opacity-40"
+            >
+              {isCopying ? <Loader2 className="size-3.5 animate-spin" /> : "Copy"}
+            </Button>
+            <Button
+              variant="default"
+              onClick={handleSave}
+              disabled={!imageLoaded || isSaving || isCopying}
+              className="h-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold px-5 disabled:opacity-50 shadow-sm"
+            >
+              {isSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Export"}
+            </Button>
+          </div>
         </div>
 
-        {/* Right Sidebar — Redesigned High-Performance Tabbed Styling Panel */}
-        <div className="w-[270px] xl:w-[320px] shrink-0 border-l border-[#252525] bg-[#1a1a1a] flex flex-col sidebar-scroll transition-all duration-200">
-          {/* Header & Tabs */}
-          <div className="p-3 border-b border-[#252525] sticky top-0 bg-[#1a1a1a] z-20 space-y-2">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-semibold text-white tracking-tight flex items-center gap-1.5">
-                <div className="size-3.5 rounded-sm bg-gradient-to-br from-blue-500 to-purple-600" />
-                Appearance & Customization
-              </span>
-            </div>
-
-            {/* Segmented Tab Controls */}
-            <div className="grid grid-cols-4 p-1 bg-[#141414] rounded-xl border border-[#262626]">
-              <button
-                type="button"
-                onClick={() => setActiveTab("bg")}
-                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs transition-all duration-150 ${
-                  activeTab === "bg"
-                    ? "bg-[#262626] text-white shadow-sm font-medium border border-white/10"
-                    : "text-muted-foreground hover:text-white hover:bg-[#1c1c1c]"
-                }`}
-                title="Background"
-              >
-                <Palette className="size-3.5 shrink-0" />
-                <span>Bg</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab("wallpapers")}
-                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs transition-all duration-150 ${
-                  activeTab === "wallpapers"
-                    ? "bg-[#262626] text-white shadow-sm font-medium border border-white/10"
-                    : "text-muted-foreground hover:text-white hover:bg-[#1c1c1c]"
-                }`}
-                title="Media & Wallpapers"
-              >
-                <ImageIcon className="size-3.5 shrink-0" />
-                <span>Media</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab("frame")}
-                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs transition-all duration-150 ${
-                  activeTab === "frame"
-                    ? "bg-[#262626] text-white shadow-sm font-medium border border-white/10"
-                    : "text-muted-foreground hover:text-white hover:bg-[#1c1c1c]"
-                }`}
-                title="Style, Frame & Border"
-              >
-                <LayoutGrid className="size-3.5 shrink-0" />
-                <span>Style</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab("layout")}
-                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs transition-all duration-150 ${
-                  activeTab === "layout"
-                    ? "bg-[#262626] text-white shadow-sm font-medium border border-white/10"
-                    : "text-muted-foreground hover:text-white hover:bg-[#1c1c1c]"
-                }`}
-                title="Layout & Presets"
-              >
-                <Box className="size-3.5 shrink-0" />
-                <span>Layout</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Tab Content */}
-          <div className="p-4 space-y-6 pb-10">
-            {activeTab === "bg" && (
-              <div className="space-y-4">
-                <BackgroundSelector
-                  backgroundType={settings.backgroundType as "transparent" | "white" | "black" | "gray" | "gradient" | "custom" | "image"}
-                  customColor={settings.customColor}
-                  selectedGradient={selectedGradientOption.id}
-                  onBackgroundTypeChange={actions.setBackgroundType}
-                  onCustomColorChange={actions.setCustomColor}
-                  onGradientSelect={actions.setGradient}
-                  onImageSelect={actions.handleImageSelect}
-                />
-              </div>
-            )}
-
-            {activeTab === "wallpapers" && (
-              <div className="space-y-4">
-                <AssetGrid
-                  categories={assetCategories}
-                  selectedImage={settings.selectedImageSrc}
-                  backgroundType={settings.backgroundType}
-                  onImageSelect={actions.handleImageSelect}
-                />
-              </div>
-            )}
-
-            {activeTab === "frame" && (
-              <div className="space-y-6">
-                <div className="space-y-2.5">
-                  <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Style</h3>
-                  <StyleSelector
-                    frameStyle={settings.frameStyle || "default"}
-                    framePadding={settings.framePadding ?? 0}
-                    frameOpacity={settings.frameOpacity ?? 100}
-                    onChange={actions.setFrameStyle}
-                    onFramePaddingChangeTransient={actions.setFramePaddingTransient}
-                    onFramePaddingChange={actions.setFramePadding}
-                    onFrameOpacityChangeTransient={actions.setFrameOpacityTransient}
-                    onFrameOpacityChange={actions.setFrameOpacity}
-                  />
-                </div>
-
-                <div className="space-y-2.5">
-                  <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Mockup Frame</h3>
-                  <MockupSelector
-                    windowFrame={settings.windowFrame || "none"}
-                    onChange={actions.setWindowFrame}
-                  />
-                </div>
-
-                <div className="space-y-2.5">
-                  <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Border</h3>
-                  <BorderPresets
-                    borderPreset={settings.borderPreset || "curved"}
-                    borderRadius={settings.borderRadius}
-                    onPresetChange={actions.setBorderPreset}
-                    onBorderRadiusChangeTransient={actions.setBorderRadiusTransient}
-                    onBorderRadiusChange={actions.setBorderRadius}
-                  />
-                </div>
-              </div>
-            )}
-
-            {activeTab === "layout" && (
-              <div className="space-y-3">
-                <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">3D Perspective Presets</h3>
-                <LayoutPresets
-                  layoutPreset={settings.layoutPreset || "flat"}
-                  onChange={actions.setLayoutPreset}
+        <div className="w-[308px] xl:w-[348px] shrink-0 p-3 -mt-8 flex flex-col bg-canvas min-w-0">
+          <div className="flex-1 flex flex-col min-h-0 rounded-2xl border border-border bg-card shadow-sm dark:shadow-xl overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-y-auto sidebar-scroll">
+              <div className="pt-3 pb-4">
+                <RightSidebar
+                  settings={settings}
+                  actions={actions}
                   previewUrl={previewUrl}
+                  selectedAnnotation={selectedAnnotation}
+                  onAnnotationUpdate={handleAnnotationUpdate}
                 />
               </div>
-            )}
+            </div>
           </div>
         </div>
       </div>

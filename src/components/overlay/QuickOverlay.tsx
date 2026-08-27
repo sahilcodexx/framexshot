@@ -7,6 +7,13 @@ import { Check, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "motion/react";
+import { Reveal } from "@/lib/motion";
+
+// Motion tokens (mirror --duration-* / --ease-* from src/index.css)
+const MOTION_DURATION = {
+  quick: 0.15, // --duration-quick (150ms)
+  fast: 0.25, // --duration-fast (250ms)
+} as const;
 
 type OverlayEventPayload = {
   path: string;
@@ -195,7 +202,7 @@ export function QuickOverlay() {
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: isFadingOut ? 0 : 1 }}
-          transition={{ duration: 0.18, ease: "easeOut" }}
+          transition={{ duration: MOTION_DURATION.quick, ease: "easeOut" }}
           className="flex flex-col h-full"
         >
           <div className="relative flex-1 min-h-0 overflow-hidden bg-muted/5">
@@ -204,20 +211,24 @@ export function QuickOverlay() {
                 <ImageIcon className="size-12 text-muted-foreground" />
               </div>
             ) : (
-              <img
-                alt="Latest capture preview"
-                src={imageSrc || undefined}
-                className={`size-full object-contain transition-opacity duration-200 ${
-                  imageLoaded || dataUrl ? "opacity-100" : "opacity-0"
-                }`}
-                onLoad={() => setImageLoaded(true)}
-                onError={() => {
-                  if (!dataUrl) {
-                    setImageError(true);
-                    setImageLoaded(false);
-                  }
-                }}
-              />
+              <Reveal
+                key={state.path}
+                className="size-full"
+                duration={MOTION_DURATION.fast * 1000}
+              >
+                <img
+                  alt="Latest capture preview"
+                  src={imageSrc || undefined}
+                  className="size-full object-contain"
+                  onLoad={() => setImageLoaded(true)}
+                  onError={() => {
+                    if (!dataUrl) {
+                      setImageError(true);
+                      setImageLoaded(false);
+                    }
+                  }}
+                />
+              </Reveal>
             )}
             {!imageLoaded && !dataUrl && !imageError && (
               <div className="absolute inset-0 flex items-center justify-center bg-muted/20">
@@ -228,7 +239,7 @@ export function QuickOverlay() {
           <div className="p-1.5 bg-background/95 border-t border-border flex flex-col gap-1 shrink-0">
             <motion.div
               animate={copied ? { y: -2 } : { y: 0 }}
-              transition={{ duration: 0.15 }}
+              transition={{ duration: MOTION_DURATION.quick }}
             >
               <Button
                 size="sm"

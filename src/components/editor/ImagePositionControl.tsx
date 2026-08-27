@@ -1,5 +1,5 @@
 import { memo, useRef, useCallback, useEffect } from "react";
-import { Slider } from "@/components/ui/slider";
+import { PillSlider } from "@/components/ui/pill-slider";
 import { RotateCcw } from "lucide-react";
 import {
   Tooltip,
@@ -17,6 +17,8 @@ interface ImagePositionControlProps {
   onOffsetTransient: (x: number, y: number) => void;
   onOffsetCommit: (x: number, y: number) => void;
   onReset: () => void;
+  /** Signals drag start/end so the preview generator can skip work. */
+  onIsDraggingChange?: (dragging: boolean) => void;
 }
 
 /** Max pan range in each direction (px) */
@@ -35,6 +37,7 @@ export const ImagePositionControl = memo(function ImagePositionControl({
   onOffsetTransient,
   onOffsetCommit,
   onReset,
+  onIsDraggingChange,
 }: ImagePositionControlProps) {
   const padRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
@@ -119,7 +122,7 @@ export const ImagePositionControl = memo(function ImagePositionControl({
         {/* 2D Position Pad */}
         <div
           ref={padRef}
-          className="relative mx-auto rounded-xl border border-[#2a2a2a] bg-[#0e0e0e] cursor-crosshair select-none overflow-hidden"
+          className="relative mx-auto rounded-xl border border-border bg-background cursor-grab active:cursor-grabbing select-none overflow-hidden"
           style={{ width: PAD_PX, height: PAD_PX }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -129,19 +132,19 @@ export const ImagePositionControl = memo(function ImagePositionControl({
           {/* Grid lines */}
           <div className="absolute inset-0 pointer-events-none">
             {/* Horizontal thirds */}
-            <div className="absolute left-0 right-0 border-t border-[#222]" style={{ top: "33.3%" }} />
-            <div className="absolute left-0 right-0 border-t border-[#222]" style={{ top: "66.6%" }} />
+            <div className="absolute left-0 right-0 border-t border-border" style={{ top: "33.3%" }} />
+            <div className="absolute left-0 right-0 border-t border-border" style={{ top: "66.6%" }} />
             {/* Vertical thirds */}
-            <div className="absolute top-0 bottom-0 border-l border-[#222]" style={{ left: "33.3%" }} />
-            <div className="absolute top-0 bottom-0 border-l border-[#222]" style={{ left: "66.6%" }} />
+            <div className="absolute top-0 bottom-0 border-l border-border" style={{ left: "33.3%" }} />
+            <div className="absolute top-0 bottom-0 border-l border-border" style={{ left: "66.6%" }} />
             {/* Center crosshair */}
-            <div className="absolute left-1/2 top-0 bottom-0 border-l border-dashed border-[#333]" />
-            <div className="absolute top-1/2 left-0 right-0 border-t border-dashed border-[#333]" />
+            <div className="absolute left-1/2 top-0 bottom-0 border-l border-dashed border-border" />
+            <div className="absolute top-1/2 left-0 right-0 border-t border-dashed border-border" />
           </div>
 
           {/* Movable dot */}
           <div
-            className="absolute size-4 rounded-full bg-white shadow-lg border-2 border-[#333] pointer-events-none transition-[box-shadow]"
+            className="absolute size-4 rounded-full bg-foreground shadow-lg border-2 border-border pointer-events-none transition-[box-shadow]"
             style={{
               left: dotX,
               top: dotY,
@@ -151,10 +154,10 @@ export const ImagePositionControl = memo(function ImagePositionControl({
           />
 
           {/* Corner labels */}
-          <span className="absolute top-1 left-1.5 text-[8px] text-[#333] pointer-events-none font-mono">↖</span>
-          <span className="absolute top-1 right-1.5 text-[8px] text-[#333] pointer-events-none font-mono">↗</span>
-          <span className="absolute bottom-1 left-1.5 text-[8px] text-[#333] pointer-events-none font-mono">↙</span>
-          <span className="absolute bottom-1 right-1.5 text-[8px] text-[#333] pointer-events-none font-mono">↘</span>
+          <span className="absolute top-1 left-1.5 text-[8px] text-muted-foreground/50 pointer-events-none font-mono">↖</span>
+          <span className="absolute top-1 right-1.5 text-[8px] text-muted-foreground/50 pointer-events-none font-mono">↗</span>
+          <span className="absolute bottom-1 left-1.5 text-[8px] text-muted-foreground/50 pointer-events-none font-mono">↙</span>
+          <span className="absolute bottom-1 right-1.5 text-[8px] text-muted-foreground/50 pointer-events-none font-mono">↘</span>
         </div>
 
         {/* Offset readout */}
@@ -167,20 +170,18 @@ export const ImagePositionControl = memo(function ImagePositionControl({
 
         {/* Zoom slider */}
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs text-muted-foreground font-medium">Zoom</label>
-            <span className="text-xs text-muted-foreground font-mono tabular-nums">{scalePercent}%</span>
-          </div>
-          <Slider
-            value={[scalePercent]}
-            onValueChange={(value) => onScaleChangeTransient(value[0] / 100)}
-            onValueCommit={(value) => onScaleChange(value[0] / 100)}
+          <PillSlider
+            label="Zoom"
+            value={scalePercent}
+            displayValue={`${scalePercent}%`}
             min={50}
             max={200}
             step={1}
-            className="w-full"
+            onChangeTransient={(v) => onScaleChangeTransient(v / 100)}
+            onChange={(v) => onScaleChange(v / 100)}
+            onDragChange={onIsDraggingChange}
           />
-          <div className="flex justify-between text-[9px] text-[#444] font-mono">
+          <div className="flex justify-between text-[9px] text-muted-foreground/60 font-mono">
             <span>50%</span>
             <span>100%</span>
             <span>200%</span>

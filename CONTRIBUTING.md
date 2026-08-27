@@ -39,10 +39,16 @@ Be respectful, constructive, and professional in all interactions. Focus on the 
 
 ### Installing FrameXShot for Testing
 
-If you want to test the production build, download the latest AppImage from releases:
+On Linux, install with the universal CLI installer (builds from source) or the AUR package:
 
 ```bash
-Download the latest release from [GitHub Releases](https://github.com/sahilcodexx/framexshot/releases).
+# CLI installer (all distros)
+curl -fsSL https://raw.githubusercontent.com/sahilcodexx/framexshot/main/packaging/install.sh | sh
+
+# or on Arch: yay -S framexshot
+```
+
+On Windows/macOS, download the native installer from [GitHub Releases](https://github.com/sahilcodexx/framexshot/releases).
 
 ## Development Setup
 

@@ -1,6 +1,7 @@
 export {
   useEditorStore,
   useSettings,
+  useCustomColor,
   useBackgroundType,
   useBlurAmount,
   useNoiseAmount,
@@ -23,6 +24,10 @@ export {
   useImageScale,
   useImageOffsetX,
   useImageOffsetY,
+  useSharpness,
+  useBrightness,
+  useContrast,
+  useSaturation,
   useAnnotations,
   useCanUndo,
   useCanRedo,

@@ -19,9 +19,9 @@
     </p>
   </description>
   <developer_name>Kartik Labhshetwar</developer_name>
-  <url type="homepage">https://github.com/kartiklhb/framexshot</url>
-  <url type="bugtracker">https://github.com/kartiklhb/framexshot/issues</url>
-  <url type="vcs-browser">https://github.com/kartiklhb/framexshot</url>
+  <url type="homepage">https://github.com/sahilcodexx/framexshot</url>
+  <url type="bugtracker">https://github.com/sahilcodexx/framexshot/issues</url>
+  <url type="vcs-browser">https://github.com/sahilcodexx/framexshot</url>
   <launchable type="desktop-id">com.framexshot.app.desktop</launchable>
   <provides>
     <binary>framexshot</binary>
