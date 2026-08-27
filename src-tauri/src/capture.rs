@@ -30,9 +30,53 @@ pub fn is_wayland() -> bool {
             .unwrap_or(false)
 }
 
-/// Check if a binary is on PATH (pure Rust — no `which` dependency, which is
-/// absent from minimal desktops/minimal installs)
+/// True if we're running inside a Flatpak sandbox. Inside a Flatpak the
+/// `$PATH` is the Flatpak's own `/app/bin:/usr/bin`, so `grim`/`slurp`/
+/// `spectacle` etc. installed on the host are invisible. We have to use
+/// `flatpak-spawn --host` to reach them — the official, supported way
+/// to escape the sandbox for a single tool without giving up the rest
+/// of the sandbox.
+pub fn is_flatpak() -> bool {
+    // The Flatpak runtime always sets /.flatpak-info; nothing outside
+    // a Flatpak ever creates that path. The env var is a redundant
+    // belt-and-braces check.
+    Path::new("/.flatpak-info").exists() || std::env::var_os("FLATPAK_ID").is_some()
+}
+
+/// Resolve a binary invocation. Inside a Flatpak we wrap the command in
+/// `flatpak-spawn --host` so the host's `grim`/`slurp`/etc. are reachable.
+/// Outside a Flatpak it's a plain `Command::new(name)` (so we don't fork a
+/// process just to test PATH membership).
+pub fn host_command(name: &str) -> Command {
+    if is_flatpak() {
+        let mut c = Command::new("flatpak-spawn");
+        c.arg("--host");
+        c.arg(name);
+        c
+    } else {
+        Command::new(name)
+    }
+}
+
+/// Check if a binary is on PATH. Inside a Flatpak we use
+/// `flatpak-spawn --host which <name>` so we test the *host*'s PATH,
+/// not the Flatpak's empty one. Outside a Flatpak it's a pure-Rust
+/// walk of `$PATH` (no `which` dependency — some minimal installs
+/// don't ship `which`).
 pub fn has_binary(name: &str) -> bool {
+    if is_flatpak() {
+        // Cheap test: ask the host to resolve the binary. We treat
+        // any non-error exit as "present" — `flatpak-spawn` itself
+        // always exits 0 when it can talk to the host, even if the
+        // inner `which` fails; so we look at the produced stdout.
+        return Command::new("flatpak-spawn")
+            .args(["--host", "sh", "-c", &format!("command -v {} >/dev/null 2>&1", name)])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+    }
     let Ok(path_var) = std::env::var("PATH") else {
         return false;
     };
@@ -78,7 +122,7 @@ pub fn capture_region(path: &Path) -> Result<(), String> {
         }
         // Legacy GNOME: gnome-screenshot -a
         if has_binary("gnome-screenshot") {
-            let status = Command::new("gnome-screenshot")
+            let status = host_command("gnome-screenshot")
                 .arg("-a")
                 .arg("-f")
                 .arg(path)
@@ -105,7 +149,7 @@ pub fn capture_region(path: &Path) -> Result<(), String> {
         return Ok(());
     }
     if has_binary("maim") {
-        let status = Command::new("maim")
+        let status = host_command("maim")
             .arg("-s")
             .arg(path)
             .status()
@@ -115,7 +159,7 @@ pub fn capture_region(path: &Path) -> Result<(), String> {
         }
     }
     if has_binary("scrot") {
-        let status = Command::new("scrot")
+        let status = host_command("scrot")
             .arg("-s")
             .arg(path)
             .status()
@@ -138,7 +182,7 @@ pub fn capture_fullscreen(path: &Path) -> Result<(), String> {
             return Ok(());
         }
         if has_binary("grim") {
-            let status = Command::new("grim")
+            let status = host_command("grim")
                 .arg(path)
                 .status()
                 .map_err(|e| format!("Failed to run grim: {}", e))?;
@@ -158,7 +202,7 @@ pub fn capture_fullscreen(path: &Path) -> Result<(), String> {
         }
         // Legacy GNOME
         if has_binary("gnome-screenshot") {
-            let status = Command::new("gnome-screenshot")
+            let status = host_command("gnome-screenshot")
                 .arg("-f")
                 .arg(path)
                 .status()
@@ -183,7 +227,7 @@ pub fn capture_fullscreen(path: &Path) -> Result<(), String> {
         return Ok(());
     }
     if has_binary("scrot") {
-        let status = Command::new("scrot")
+        let status = host_command("scrot")
             .arg(path)
             .status()
             .map_err(|e| format!("Failed to run scrot: {}", e))?;
@@ -197,7 +241,7 @@ pub fn capture_fullscreen(path: &Path) -> Result<(), String> {
         return Ok(());
     }
     if has_binary("gnome-screenshot") {
-        let status = Command::new("gnome-screenshot")
+        let status = host_command("gnome-screenshot")
             .arg("-f")
             .arg(path)
             .status()
@@ -219,7 +263,7 @@ pub fn capture_window(path: &Path) -> Result<(), String> {
         }
         // KDE Plasma: spectacle --window
         if has_binary("spectacle") {
-            let status = Command::new("spectacle")
+            let status = host_command("spectacle")
                 .arg("--window")
                 .arg("-b")
                 .arg("-n")
@@ -238,7 +282,7 @@ pub fn capture_window(path: &Path) -> Result<(), String> {
         }
         // Legacy GNOME
         if has_binary("gnome-screenshot") {
-            let status = Command::new("gnome-screenshot")
+            let status = host_command("gnome-screenshot")
                 .arg("-w")
                 .arg("-f")
                 .arg(path)
@@ -256,7 +300,7 @@ pub fn capture_window(path: &Path) -> Result<(), String> {
 
     // X11
     if has_binary("spectacle") {
-        let status = Command::new("spectacle")
+        let status = host_command("spectacle")
             .arg("--window")
             .arg("-b")
             .arg("-n")
@@ -274,7 +318,7 @@ pub fn capture_window(path: &Path) -> Result<(), String> {
         return Ok(());
     }
     if has_binary("scrot") {
-        let status = Command::new("scrot")
+        let status = host_command("scrot")
             .arg("-u")
             .arg(path)
             .status()
@@ -295,7 +339,7 @@ fn cosmic_region(path: &Path) -> Result<(), String> {
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| "/tmp".to_string());
 
-    let output = Command::new("cosmic-screenshot")
+    let output = host_command("cosmic-screenshot")
         .arg("--interactive=true")
         .arg("--modal=false")
         .arg("--notify=false")
@@ -340,7 +384,7 @@ fn cosmic_fullscreen(path: &Path) -> Result<(), String> {
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| "/tmp".to_string());
 
-    let output = Command::new("cosmic-screenshot")
+    let output = host_command("cosmic-screenshot")
         .arg("--interactive=false")
         .arg("--notify=false")
         .arg("-s")
@@ -378,7 +422,7 @@ fn cosmic_fullscreen(path: &Path) -> Result<(), String> {
 }
 
 fn spectacle_region(path: &Path) -> Result<(), String> {
-    let status = Command::new("spectacle")
+    let status = host_command("spectacle")
         .arg("--region")
         .arg("-b")
         .arg("-n")
@@ -395,7 +439,7 @@ fn spectacle_region(path: &Path) -> Result<(), String> {
 }
 
 fn spectacle_fullscreen(path: &Path) -> Result<(), String> {
-    let status = Command::new("spectacle")
+    let status = host_command("spectacle")
         .arg("--fullscreen")
         .arg("-b")
         .arg("-n")
@@ -412,7 +456,7 @@ fn spectacle_fullscreen(path: &Path) -> Result<(), String> {
 }
 
 fn grim_slurp_region(path: &Path) -> Result<(), String> {
-    let slurp_output = Command::new("slurp")
+    let slurp_output = host_command("slurp")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -427,7 +471,7 @@ fn grim_slurp_region(path: &Path) -> Result<(), String> {
         return Err("Screenshot was cancelled or failed".to_string());
     }
 
-    let status = Command::new("grim")
+    let status = host_command("grim")
         .arg("-g")
         .arg(&region)
         .arg(path)

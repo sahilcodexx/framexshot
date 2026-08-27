@@ -38,6 +38,18 @@ finish-args:
   # DMABuf can blank the WebView on some GPUs inside the sandbox.
   - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
 
+  # ── Host tool access (for screen-capture fallbacks) ─────────────────────
+  # The capture chain tries grim/slurp/spectacle/cosmic-screenshot/etc.
+  # before the portal. Those binaries live on the host, NOT inside this
+  # Flatpak (which only has /app/bin). flatpak-spawn --host is the
+  # supported, narrowly-scoped way to invoke a single host binary
+  # without giving up the rest of the sandbox.
+  - --host-fallback-permissions=org.freedesktop.Flatpak.flatpak-spawn
+  # Persist the screenshot portal grant so the user doesn't see a
+  # permission dialog on the first capture. They can revoke via
+  # `flatpak permission-reset screenshot com.framexshot.app`.
+  - --persist=screenshot
+
 modules:
   # Official Flathub shared-modules recipe (correct commits + patches).
   - shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json
