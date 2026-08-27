@@ -197,27 +197,39 @@ jobs:
             echo "→ Processing $APPIMAGE"
 
             WORK=$(mktemp -d)
-            # 1. Extract the embedded SquashFS into a temp dir.
-            #    unsquashfs on a Type 1 AppImage pulls the SquashFS contents
-            #    (the app files, AppRun, etc.) out into WORK/extract.
-            unsquashfs -d "$WORK/extract" "$APPIMAGE"
+            cd "$WORK"
+
+            # 1. Extract the AppImage using its OWN runtime. The Tauri-built
+            #    AppImage is a Type 1 with an ELF wrapper around a SquashFS,
+            #    and unsquashfs on the runner fails to find the embedded
+            #    SquashFS superblock in some modern ELF layouts. The AppImage
+            #    runtime knows exactly where the SquashFS is — invoking it
+            #    with --appimage-extract drops the contents into ./squashfs-root.
+            chmod +x "$APPIMAGE"
+            "$APPIMAGE" --appimage-extract >/dev/null 2>&1
+
+            if [ ! -d squashfs-root ]; then
+              echo "✗ Extraction failed: squashfs-root/ not created" >&2
+              exit 1
+            fi
 
             # 2. Replace the default AppRun with our self-extracting one.
             #    It extracts to ~/.cache/framexshot/<ver>/ on first launch
             #    and re-execs the binary from there — bypassing the FUSE
             #    namespace that broke WebKit on COSMIC and other Wayland
             #    compositors.
-            cp packaging/appimage/AppRun "$WORK/extract/AppRun"
-            chmod +x "$WORK/extract/AppRun"
+            cp "$OLDPWD/packaging/appimage/AppRun" squashfs-root/AppRun
+            chmod +x squashfs-root/AppRun
 
             # 3. Repackage as a pure SquashFS (Type 2 AppImage).
             #    A Type 2 AppImage is just a SquashFS with no ELF wrapper —
             #    the AppImage runtime always extracts it instead of FUSE-
             #    mounting, so no FUSE is needed on the user's system.
-            mksquashfs "$WORK/extract" "$APPIMAGE.tmp" -noappend -comp xz -b 1M -all-root
+            mksquashfs squashfs-root "$APPIMAGE.tmp" -noappend -comp xz -b 1M -all-root
 
             # 4. Replace the original
-            mv "$APPIMAGE.tmp" "$APPIMAGE"
+            mv "$APPIMAGE.tmp" "$OLDPWD/$APPIMAGE"
+            cd "$OLDPWD"
             rm -rf "$WORK"
 
             # 5. Verify the result
