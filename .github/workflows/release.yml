@@ -109,36 +109,6 @@ jobs:
           echo "$COMMITS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Inject custom AppRun into AppImage (fixes FUSE namespace WebKit issue)
-        if: contains(matrix.platform, 'ubuntu')
-        run: |
-          set -euo pipefail
-          APPIMAGE_DIR="src-tauri/target/release/bundle/appimage"
-          # Find every AppImage we just built (x86_64 and arm64)
-          for APPIMAGE in "$APPIMAGE_DIR"/*.AppImage; do
-            [ -f "$APPIMAGE" ] || continue
-            echo "→ Processing $APPIMAGE"
-
-            WORK=$(mktemp -d)
-            # 1. Extract the AppImage (uses unsquashfs; no FUSE needed)
-            unsquashfs -d "$WORK/extract" "$APPIMAGE"
-
-            # 2. Replace the default AppRun with our self-extracting one
-            cp packaging/appimage/AppRun "$WORK/extract/AppRun"
-            chmod +x "$WORK/extract/AppRun"
-
-            # 3. Repackage as Type 2 AppImage
-            mksquashfs "$WORK/extract" "$APPIMAGE.tmp" -noappend -comp xz -b 1M -all-root
-            # Set Type 2 magic (AI\x02 at offset 8) so the runtime always
-            # extracts instead of FUSE-mounting. This sidesteps the
-            # FUSE namespace that broke WebKit on COSMIC / Hyprland.
-            printf '\x41\x49\x02' | dd of="$APPIMAGE.tmp" bs=1 seek=8 count=3 conv=notrunc
-            mv "$APPIMAGE.tmp" "$APPIMAGE"
-            rm -rf "$WORK"
-
-            echo "✓ Converted to Type 2 with self-extracting AppRun: $APPIMAGE"
-          done
-
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -209,6 +179,56 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      # Convert the just-built Type 1 AppImage into a Type 2 (always-extracts)
+      # and inject the self-extracting AppRun. This MUST run AFTER the
+      # `tauri-apps/tauri-action@v0` build, because that action rebuilds the
+      # AppImage from scratch and would otherwise overwrite our conversion.
+      # The previous version (0b96076) had this step BEFORE the build, which
+      # meant the conversion was silently discarded — the published artifact
+      # was still the original Type 1 with garbled ELF padding.
+      - name: Inject custom AppRun + convert AppImage to Type 2 (no FUSE)
+        if: contains(matrix.platform, 'ubuntu')
+        run: |
+          set -euo pipefail
+          APPIMAGE_DIR="src-tauri/target/release/bundle/appimage"
+          for APPIMAGE in "$APPIMAGE_DIR"/*.AppImage; do
+            [ -f "$APPIMAGE" ] || continue
+            echo "→ Processing $APPIMAGE"
+
+            WORK=$(mktemp -d)
+            # 1. Extract the embedded SquashFS into a temp dir.
+            #    unsquashfs on a Type 1 AppImage pulls the SquashFS contents
+            #    (the app files, AppRun, etc.) out into WORK/extract.
+            unsquashfs -d "$WORK/extract" "$APPIMAGE"
+
+            # 2. Replace the default AppRun with our self-extracting one.
+            #    It extracts to ~/.cache/framexshot/<ver>/ on first launch
+            #    and re-execs the binary from there — bypassing the FUSE
+            #    namespace that broke WebKit on COSMIC and other Wayland
+            #    compositors.
+            cp packaging/appimage/AppRun "$WORK/extract/AppRun"
+            chmod +x "$WORK/extract/AppRun"
+
+            # 3. Repackage as a pure SquashFS (Type 2 AppImage).
+            #    A Type 2 AppImage is just a SquashFS with no ELF wrapper —
+            #    the AppImage runtime always extracts it instead of FUSE-
+            #    mounting, so no FUSE is needed on the user's system.
+            mksquashfs "$WORK/extract" "$APPIMAGE.tmp" -noappend -comp xz -b 1M -all-root
+
+            # 4. Replace the original
+            mv "$APPIMAGE.tmp" "$APPIMAGE"
+            rm -rf "$WORK"
+
+            # 5. Verify the result
+            FIRST4=$(head -c 4 "$APPIMAGE" | xxd -p)
+            if [ "$FIRST4" = "68737173" ]; then
+              echo "✓ Type 2 verified: $APPIMAGE starts with 'hsqs' (SquashFS magic)"
+            else
+              echo "✗ Conversion FAILED: $APPIMAGE first 4 bytes are $FIRST4 (expected 68737173)" >&2
+              exit 1
+            fi
+          done
 
   # ── Build Flatpak bundle (universal Linux — bundles WebKitGTK via GNOME runtime) ──
   # Decoupled from publish: failure here will not block the AppImage/deb/rpm/dmg
