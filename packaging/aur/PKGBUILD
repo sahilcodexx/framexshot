@@ -9,7 +9,7 @@
 # Install:        yay -S framexshot   (or: paru -S framexshot)
 
 pkgname=framexshot
-pkgver=1.0.3
+pkgver=1.0.4
 pkgrel=1
 pkgdesc="Beautiful, effortless screenshot tool for Linux — capture regions, screens, windows or text (OCR), then edit them with frames, backgrounds, effects and annotations."
 arch=('x86_64' 'aarch64')

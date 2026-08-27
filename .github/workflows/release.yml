@@ -20,20 +20,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux: .deb / .rpm / .AppImage. The AppImage we ship is a
-          # Type 2 (always-extracts) — we inject a custom AppRun via
-          # the "Inject custom AppRun" step below, which:
-          #   1. Extracts the Tauri-built AppImage
-          #   2. Replaces the default AppRun with one that extracts to
-          #      $XDG_CACHE_HOME and re-execs from there
-          #   3. Repackages as Type 2 so FUSE is never needed
-          # This is the proper fix for the FUSE namespace WebKit issue
-          # that broke the AppImage on COSMIC and other Wayland compositors.
+          # Linux: .deb / .rpm only. AppImage is NOT built in CI — see
+          # AGENTS.md "Known Issue #5". Every attempt to ship an AppImage
+          # has broken in some new way (FUSE namespace WebKit crash, unsquashfs
+          # superblock detection failing on the runner, tauri-action overwriting
+          # the post-build conversion, etc). The .deb / .rpm / AUR paths don't
+          # hit any of those because they install through the distro's package
+          # manager. If you want an AppImage for a one-off, run
+          #   cargo tauri build --bundles appimage
+          # in the source tree and accept the FUSE issues for now.
           - platform: ubuntu-24.04
-            args: --bundles appimage,deb,rpm
+            args: --bundles deb,rpm
             arch: linux-x86_64
           - platform: ubuntu-24.04-arm
-            args: --bundles appimage,deb,rpm
+            args: --bundles deb,rpm
             arch: linux-arm64
           - platform: windows-latest
             args: ''
@@ -121,23 +121,13 @@ jobs:
 
             | Platform | Package | Notes |
             |----------|---------|-------|
-            | **Linux (x86_64)** | `.AppImage`, `.deb`, `.rpm` | Type 2 AppImage — no FUSE needed |
-            | **Linux (arm64)** | `.AppImage`, `.deb`, `.rpm` | Type 2 AppImage — no FUSE needed |
+            | **Linux (x86_64)** | `.deb`, `.rpm` | distro-native install |
+            | **Linux (arm64)** | `.deb`, `.rpm` | Raspberry Pi / Asahi / etc. |
             | **Windows** | `*_x64-setup.exe` | standard installer |
             | **macOS (Intel)** | `*_x64.dmg` | macOS 10.15+ |
             | **macOS (Apple Silicon)** | `*_aarch64.dmg` | macOS 10.15+ |
 
             ### Linux — pick what fits your distro
-
-            **AppImage** (universal, no install — no FUSE required):
-            ```sh
-            chmod +x framexshot_${{ env.APP_VERSION }}_amd64.AppImage
-            ./framexshot_${{ env.APP_VERSION }}_amd64.AppImage
-            ```
-            First launch extracts the app to `~/.cache/framexshot/` and runs
-            it from there — subsequent launches are instant. The extraction
-            avoids the FUSE mount namespace that previously broke WebKit
-            on COSMIC and other Wayland compositors.
 
             **Debian / Ubuntu / Pop!_OS / Mint / Elementary:**
             ```sh
@@ -179,68 +169,6 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
-
-      # Convert the just-built Type 1 AppImage into a Type 2 (always-extracts)
-      # and inject the self-extracting AppRun. This MUST run AFTER the
-      # `tauri-apps/tauri-action@v0` build, because that action rebuilds the
-      # AppImage from scratch and would otherwise overwrite our conversion.
-      # The previous version (0b96076) had this step BEFORE the build, which
-      # meant the conversion was silently discarded — the published artifact
-      # was still the original Type 1 with garbled ELF padding.
-      - name: Inject custom AppRun + convert AppImage to Type 2 (no FUSE)
-        if: contains(matrix.platform, 'ubuntu')
-        run: |
-          set -euo pipefail
-          APPIMAGE_DIR="src-tauri/target/release/bundle/appimage"
-          for APPIMAGE in "$APPIMAGE_DIR"/*.AppImage; do
-            [ -f "$APPIMAGE" ] || continue
-            echo "→ Processing $APPIMAGE"
-
-            WORK=$(mktemp -d)
-            cd "$WORK"
-
-            # 1. Extract the AppImage using its OWN runtime. The Tauri-built
-            #    AppImage is a Type 1 with an ELF wrapper around a SquashFS,
-            #    and unsquashfs on the runner fails to find the embedded
-            #    SquashFS superblock in some modern ELF layouts. The AppImage
-            #    runtime knows exactly where the SquashFS is — invoking it
-            #    with --appimage-extract drops the contents into ./squashfs-root.
-            chmod +x "$APPIMAGE"
-            "$APPIMAGE" --appimage-extract >/dev/null 2>&1
-
-            if [ ! -d squashfs-root ]; then
-              echo "✗ Extraction failed: squashfs-root/ not created" >&2
-              exit 1
-            fi
-
-            # 2. Replace the default AppRun with our self-extracting one.
-            #    It extracts to ~/.cache/framexshot/<ver>/ on first launch
-            #    and re-execs the binary from there — bypassing the FUSE
-            #    namespace that broke WebKit on COSMIC and other Wayland
-            #    compositors.
-            cp "$OLDPWD/packaging/appimage/AppRun" squashfs-root/AppRun
-            chmod +x squashfs-root/AppRun
-
-            # 3. Repackage as a pure SquashFS (Type 2 AppImage).
-            #    A Type 2 AppImage is just a SquashFS with no ELF wrapper —
-            #    the AppImage runtime always extracts it instead of FUSE-
-            #    mounting, so no FUSE is needed on the user's system.
-            mksquashfs squashfs-root "$APPIMAGE.tmp" -noappend -comp xz -b 1M -all-root
-
-            # 4. Replace the original
-            mv "$APPIMAGE.tmp" "$OLDPWD/$APPIMAGE"
-            cd "$OLDPWD"
-            rm -rf "$WORK"
-
-            # 5. Verify the result
-            FIRST4=$(head -c 4 "$APPIMAGE" | xxd -p)
-            if [ "$FIRST4" = "68737173" ]; then
-              echo "✓ Type 2 verified: $APPIMAGE starts with 'hsqs' (SquashFS magic)"
-            else
-              echo "✗ Conversion FAILED: $APPIMAGE first 4 bytes are $FIRST4 (expected 68737173)" >&2
-              exit 1
-            fi
-          done
 
   # ── Build Flatpak bundle (universal Linux — bundles WebKitGTK via GNOME runtime) ──
   # Decoupled from publish: failure here will not block the AppImage/deb/rpm/dmg
