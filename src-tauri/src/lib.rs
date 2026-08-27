@@ -50,25 +50,46 @@ fn show_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Er
 pub fn run() {
     #[cfg(target_os = "linux")]
     {
-        // Disable DMABuf renderer — prevents blank screen on many Linux GPUs/AppImage
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-        // Disable GPU compositing — skip hardware compositing path entirely
-        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-        // Disable WebKit subprocess sandbox for unrestricted Linux rendering & hardware access.
-        std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1");
-        // Force Mesa software GL renderer.
-        // Even with compositing disabled, WebKit's GPU process still calls
-        // eglGetDisplay(EGL_DEFAULT_DISPLAY) to enumerate capabilities. On systems where
-        // the EGL platform doesn't match (Wayland/X11 mismatch, AppImage namespace, etc.)
-        // this returns EGL_BAD_PARAMETER and the subprocess aborts → blank window.
-        // llvmpipe (CPU Mesa) always succeeds and the UI performance impact is negligible.
-        if std::env::var_os("LIBGL_ALWAYS_SOFTWARE").is_none() {
-            std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
-        }
-        // Prefer X11/XWayland so WebKit uses the GLX EGL path rather than the Wayland
-        // EGL platform, which is less reliable in AppImage/sandboxed contexts.
-        if std::env::var_os("GDK_BACKEND").is_none() {
-            std::env::set_var("GDK_BACKEND", "x11");
+        // Linux WebKitGTK environment tuning for AppImage / sandboxed contexts.
+        //
+        // IMPORTANT: these are only set when FXS_FORCE_SOFTWARE_GL=1 is in the
+        // environment. Reason: the previous unconditional forcing of
+        // GDK_BACKEND=x11 + LIBGL_ALWAYS_SOFTWARE broke the AppImage on
+        // Wayland-native compositors (COSMIC, recent GNOME, KDE Plasma 6) where
+        // XWayland was unstable or where the GLX path was unavailable, producing
+        // a blank white window with 38% CPU on the WebKit subprocess. The dev
+        // binary (run from a normal Wayland session) was unaffected because
+        // these env vars only ran in release builds that picked up the new
+        // run() prologue, masking the regression.
+        //
+        // Opt-in with:
+        //   FXS_FORCE_SOFTWARE_GL=1 ./framexshot-x86_64.AppImage
+        // or uncomment the env-var block below for a permanent return.
+        let force_software_gl = std::env::var_os("FXS_FORCE_SOFTWARE_GL")
+            .map(|v| v != "0" && v.as_os_str() != "false")
+            .unwrap_or(false);
+
+        if force_software_gl {
+            // Disable DMABuf renderer — prevents blank screen on many Linux GPUs/AppImage
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            // Disable GPU compositing — skip hardware compositing path entirely
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+            // Disable WebKit subprocess sandbox for unrestricted Linux rendering & hardware access.
+            std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1");
+            // Force Mesa software GL renderer.
+            // Even with compositing disabled, WebKit's GPU process still calls
+            // eglGetDisplay(EGL_DEFAULT_DISPLAY) to enumerate capabilities. On systems where
+            // the EGL platform doesn't match (Wayland/X11 mismatch, AppImage namespace, etc.)
+            // this returns EGL_BAD_PARAMETER and the subprocess aborts → blank window.
+            // llvmpipe (CPU Mesa) always succeeds and the UI performance impact is negligible.
+            if std::env::var_os("LIBGL_ALWAYS_SOFTWARE").is_none() {
+                std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
+            }
+            // Prefer X11/XWayland so WebKit uses the GLX EGL path rather than the Wayland
+            // EGL platform, which is less reliable in AppImage/sandboxed contexts.
+            if std::env::var_os("GDK_BACKEND").is_none() {
+                std::env::set_var("GDK_BACKEND", "x11");
+            }
         }
     }
 
