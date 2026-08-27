@@ -90,7 +90,20 @@ All shortcuts are customisable in Preferences.
 
 ## Install
 
-FrameXShot builds against your system libraries, so there are no AppImage/Flatpak/deb/rpm bundles to fight with. On Linux you either install from the AUR (Arch-based) or via the universal CLI installer, which installs every dependency through your native package manager and compiles the app from source.
+Linux releases ship **`.deb` and `.rpm` packages** (no AppImage — its FUSE namespace breaks WebKitGTK on COSMIC and several other Wayland compositors, producing a blank window for normal users). Pick the format that matches your distro.
+
+### 📦 Debian / Ubuntu / Pop!_OS / Mint / Elementary
+
+```bash
+# Download the .deb from the latest release, then:
+sudo apt install ./framexshot_*_amd64.deb
+```
+
+### 📦 Fedora / RHEL / Nobara / openSUSE
+
+```bash
+sudo dnf install ./framexshot-*_x86_64.rpm
+```
 
 ### 🏔️ Arch Linux (AUR)
 
@@ -228,11 +241,11 @@ cd framexshot
 # 2. Install frontend dependencies
 pnpm install --frozen-lockfile
 
-# 3. Build production bundle (generates AppImage, .deb, .rpm for local dev)
+# 3. Build production bundle (generates .deb, .rpm, .dmg, .exe for local dev)
 pnpm tauri build
 ```
 
-The compiled packages will be created in `src-tauri/target/release/bundle/`. Note that Linux **releases** only ship the source-build installer above — the AppImage/deb/rpm targets exist for local testing, not distribution.
+The compiled packages will be created in `src-tauri/target/release/bundle/`. The `.deb` and `.rpm` targets are what CI ships to releases; AppImage is intentionally not built (FUSE namespace incompat with some Wayland compositors — see Install above).
 
 ---
 

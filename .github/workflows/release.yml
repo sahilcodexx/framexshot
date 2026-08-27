@@ -20,11 +20,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Linux: .deb / .rpm only. AppImage is intentionally NOT built
+          # here — its FUSE namespace breaks WebKitGTK's display/EGL
+          # detection on COSMIC and other Wayland compositors, producing
+          # a blank window + 38% CPU WebKit subprocess for normal users
+          # who have no idea what `--appimage-extract-and-run` is. The
+          # distro-native packages avoid the FUSE layer entirely. See
+          # packaging/install.sh for the universal build-from-source
+          # path, and packaging/aur/PKGBUILD for Arch.
           - platform: ubuntu-24.04
-            args: --bundles appimage,deb,rpm
+            args: --bundles deb,rpm
             arch: linux-x86_64
           - platform: ubuntu-24.04-arm
-            args: --bundles appimage,deb,rpm
+            args: --bundles deb,rpm
             arch: linux-arm64
           - platform: windows-latest
             args: ''
@@ -112,44 +120,39 @@ jobs:
 
             | Platform | Package | Notes |
             |----------|---------|-------|
-            | **Linux (x86_64)** | `.AppImage`, `.deb`, `.rpm` | choose one — see below |
-            | **Linux (arm64)** | `.AppImage`, `.deb`, `.rpm` | Raspberry Pi / Asahi / etc. |
+            | **Linux (x86_64)** | `.deb`, `.rpm` | distro-native install |
+            | **Linux (arm64)** | `.deb`, `.rpm` | Raspberry Pi / Asahi / etc. |
             | **Windows** | `*_x64-setup.exe` | standard installer |
             | **macOS (Intel)** | `*_x64.dmg` | macOS 10.15+ |
             | **macOS (Apple Silicon)** | `*_aarch64.dmg` | macOS 10.15+ |
 
             ### Linux — pick what fits your distro
 
-            **AppImage** (universal, no install — needs FUSE):
-            ```sh
-            chmod +x framexshot_${{ env.APP_VERSION }}_amd64.AppImage
-            ./framexshot_${{ env.APP_VERSION }}_amd64.AppImage
-            ```
-            No FUSE? Run with `--appimage-extract-and-run` or extract once:
-            ```sh
-            ./framexshot_${{ env.APP_VERSION }}_amd64.AppImage --appimage-extract
-            ./squashfs-root/AppRun
-            ```
-
-            **Debian / Ubuntu:**
+            **Debian / Ubuntu / Pop!_OS / Mint / Elementary:**
             ```sh
             sudo apt install ./framexshot_${{ env.APP_VERSION }}_amd64.deb
             ```
 
-            **Fedora / RHEL / openSUSE:**
+            **Fedora / RHEL / Nobara / openSUSE:**
             ```sh
             sudo dnf install ./framexshot_${{ env.APP_VERSION }}_x86_64.rpm
             ```
 
-            **Arch / Manjaro (AUR — recommended):**
+            **Arch / Manjaro / EndeavourOS (AUR — recommended):**
             ```sh
             yay -S framexshot
             ```
 
-            **Universal build-from-source installer** (any distro, no FUSE / no Flatpak needed):
+            **Any other distro (builds from source against your system libs):**
             ```sh
             curl -fsSL https://raw.githubusercontent.com/sahilcodexx/framexshot/main/packaging/install.sh | sh
             ```
+
+            > **Note on AppImage:** FrameXShot does not ship an AppImage. AppImage's
+            > FUSE namespace breaks WebKitGTK's display initialization on
+            > COSMIC and several other Wayland compositors, which produces a
+            > blank window for normal users. The `.deb` and `.rpm` packages
+            > don't have that problem and are the recommended install path.
 
             ### Windows
             ```sh
