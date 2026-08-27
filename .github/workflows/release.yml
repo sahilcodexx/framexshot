@@ -20,19 +20,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux: .deb / .rpm only. AppImage is intentionally NOT built
-          # here — its FUSE namespace breaks WebKitGTK's display/EGL
-          # detection on COSMIC and other Wayland compositors, producing
-          # a blank window + 38% CPU WebKit subprocess for normal users
-          # who have no idea what `--appimage-extract-and-run` is. The
-          # distro-native packages avoid the FUSE layer entirely. See
-          # packaging/install.sh for the universal build-from-source
-          # path, and packaging/aur/PKGBUILD for Arch.
+          # Linux: .deb / .rpm / .AppImage. The AppImage we ship is a
+          # Type 2 (always-extracts) — we inject a custom AppRun via
+          # the "Inject custom AppRun" step below, which:
+          #   1. Extracts the Tauri-built AppImage
+          #   2. Replaces the default AppRun with one that extracts to
+          #      $XDG_CACHE_HOME and re-execs from there
+          #   3. Repackages as Type 2 so FUSE is never needed
+          # This is the proper fix for the FUSE namespace WebKit issue
+          # that broke the AppImage on COSMIC and other Wayland compositors.
           - platform: ubuntu-24.04
-            args: --bundles deb,rpm
+            args: --bundles appimage,deb,rpm
             arch: linux-x86_64
           - platform: ubuntu-24.04-arm
-            args: --bundles deb,rpm
+            args: --bundles appimage,deb,rpm
             arch: linux-arm64
           - platform: windows-latest
             args: ''
@@ -108,6 +109,36 @@ jobs:
           echo "$COMMITS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Inject custom AppRun into AppImage (fixes FUSE namespace WebKit issue)
+        if: contains(matrix.platform, 'ubuntu')
+        run: |
+          set -euo pipefail
+          APPIMAGE_DIR="src-tauri/target/release/bundle/appimage"
+          # Find every AppImage we just built (x86_64 and arm64)
+          for APPIMAGE in "$APPIMAGE_DIR"/*.AppImage; do
+            [ -f "$APPIMAGE" ] || continue
+            echo "→ Processing $APPIMAGE"
+
+            WORK=$(mktemp -d)
+            # 1. Extract the AppImage (uses unsquashfs; no FUSE needed)
+            unsquashfs -d "$WORK/extract" "$APPIMAGE"
+
+            # 2. Replace the default AppRun with our self-extracting one
+            cp packaging/appimage/AppRun "$WORK/extract/AppRun"
+            chmod +x "$WORK/extract/AppRun"
+
+            # 3. Repackage as Type 2 AppImage
+            mksquashfs "$WORK/extract" "$APPIMAGE.tmp" -noappend -comp xz -b 1M -all-root
+            # Set Type 2 magic (AI\x02 at offset 8) so the runtime always
+            # extracts instead of FUSE-mounting. This sidesteps the
+            # FUSE namespace that broke WebKit on COSMIC / Hyprland.
+            printf '\x41\x49\x02' | dd of="$APPIMAGE.tmp" bs=1 seek=8 count=3 conv=notrunc
+            mv "$APPIMAGE.tmp" "$APPIMAGE"
+            rm -rf "$WORK"
+
+            echo "✓ Converted to Type 2 with self-extracting AppRun: $APPIMAGE"
+          done
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -120,13 +151,23 @@ jobs:
 
             | Platform | Package | Notes |
             |----------|---------|-------|
-            | **Linux (x86_64)** | `.deb`, `.rpm` | distro-native install |
-            | **Linux (arm64)** | `.deb`, `.rpm` | Raspberry Pi / Asahi / etc. |
+            | **Linux (x86_64)** | `.AppImage`, `.deb`, `.rpm` | Type 2 AppImage — no FUSE needed |
+            | **Linux (arm64)** | `.AppImage`, `.deb`, `.rpm` | Type 2 AppImage — no FUSE needed |
             | **Windows** | `*_x64-setup.exe` | standard installer |
             | **macOS (Intel)** | `*_x64.dmg` | macOS 10.15+ |
             | **macOS (Apple Silicon)** | `*_aarch64.dmg` | macOS 10.15+ |
 
             ### Linux — pick what fits your distro
+
+            **AppImage** (universal, no install — no FUSE required):
+            ```sh
+            chmod +x framexshot_${{ env.APP_VERSION }}_amd64.AppImage
+            ./framexshot_${{ env.APP_VERSION }}_amd64.AppImage
+            ```
+            First launch extracts the app to `~/.cache/framexshot/` and runs
+            it from there — subsequent launches are instant. The extraction
+            avoids the FUSE mount namespace that previously broke WebKit
+            on COSMIC and other Wayland compositors.
 
             **Debian / Ubuntu / Pop!_OS / Mint / Elementary:**
             ```sh
@@ -147,12 +188,6 @@ jobs:
             ```sh
             curl -fsSL https://raw.githubusercontent.com/sahilcodexx/framexshot/main/packaging/install.sh | sh
             ```
-
-            > **Note on AppImage:** FrameXShot does not ship an AppImage. AppImage's
-            > FUSE namespace breaks WebKitGTK's display initialization on
-            > COSMIC and several other Wayland compositors, which produces a
-            > blank window for normal users. The `.deb` and `.rpm` packages
-            > don't have that problem and are the recommended install path.
 
             ### Windows
             ```sh
