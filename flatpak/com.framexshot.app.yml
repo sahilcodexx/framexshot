@@ -43,8 +43,10 @@ finish-args:
   # before the portal. Those binaries live on the host, NOT inside this
   # Flatpak (which only has /app/bin). flatpak-spawn --host is the
   # supported, narrowly-scoped way to invoke a single host binary
-  # without giving up the rest of the sandbox.
-  - --host-fallback-permissions=org.freedesktop.Flatpak.flatpak-spawn
+  # without giving up the rest of the sandbox. flatpak-spawn is part
+  # of the Flatpak runtime and is always available — no permission
+  # flag needed to use it.
+  #
   # Persist the screenshot portal grant so the user doesn't see a
   # permission dialog on the first capture. They can revoke via
   # `flatpak permission-reset screenshot com.framexshot.app`.
