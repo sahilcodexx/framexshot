@@ -91,7 +91,9 @@ pub fn save_image(img: &DynamicImage, save_dir: &str, prefix: &str) -> AppResult
 
 /// Save base64-encoded image data to a file
 pub fn save_base64_image(image_data: &str, save_dir: &str, prefix: &str) -> AppResult<String> {
-    let (base64_data, extension) = if let Some(d) = image_data.strip_prefix("data:image/png;base64,") {
+    let (base64_data, extension) = if let Some(d) =
+        image_data.strip_prefix("data:image/png;base64,")
+    {
         (d, "png")
     } else if let Some(d) = image_data.strip_prefix("data:image/jpeg;base64,") {
         (d, "jpg")
@@ -271,7 +273,8 @@ pub fn render_image_with_effects(image_path: &str, settings: RenderSettings) -> 
 
     for y in 0..bg_height {
         let is_in_img_y = y >= pad_t && y < img_y_max;
-        let is_corner_y = radius_u32 > 0 && is_in_img_y && (y < top_corner_max || y >= bottom_corner_min);
+        let is_corner_y =
+            radius_u32 > 0 && is_in_img_y && (y < top_corner_max || y >= bottom_corner_min);
         let img_y = if is_in_img_y { y - pad_t } else { 0 };
 
         for x in 0..bg_width {
@@ -286,8 +289,16 @@ pub fn render_image_with_effects(image_path: &str, settings: RenderSettings) -> 
 
                     if is_left || is_right {
                         let is_top = y < top_corner_max;
-                        let corner_x = if is_left { img_x } else { img_width - 1 - img_x };
-                        let corner_y = if is_top { img_y } else { img_height - 1 - img_y };
+                        let corner_x = if is_left {
+                            img_x
+                        } else {
+                            img_width - 1 - img_x
+                        };
+                        let corner_y = if is_top {
+                            img_y
+                        } else {
+                            img_height - 1 - img_y
+                        };
 
                         let dist_x = corner_x as f32;
                         let dist_y = corner_y as f32;

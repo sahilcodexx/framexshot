@@ -105,7 +105,6 @@ pub fn run() {
             Some(vec!["--hidden"]),
         ))
         .setup(|app| {
-
             // Enable autostart by default
             {
                 use tauri_plugin_autostart::ManagerExt;
@@ -151,13 +150,22 @@ pub fn run() {
             .build();
 
             // Now CLI capture flags - window exists, events will be received.
-            if args.iter().any(|arg| arg == "--capture-region" || arg == "-r") {
+            if args
+                .iter()
+                .any(|arg| arg == "--capture-region" || arg == "-r")
+            {
                 let _ = show_main_window(&app_handle);
                 let _ = app_handle.emit("capture-triggered", ());
-            } else if args.iter().any(|arg| arg == "--capture-screen" || arg == "-s") {
+            } else if args
+                .iter()
+                .any(|arg| arg == "--capture-screen" || arg == "-s")
+            {
                 let _ = show_main_window(&app_handle);
                 let _ = app_handle.emit("capture-fullscreen", ());
-            } else if args.iter().any(|arg| arg == "--capture-window" || arg == "-w") {
+            } else if args
+                .iter()
+                .any(|arg| arg == "--capture-window" || arg == "-w")
+            {
                 let _ = show_main_window(&app_handle);
                 let _ = app_handle.emit("capture-window", ());
             } else if args.iter().any(|arg| arg == "--capture-ocr" || arg == "-o") {

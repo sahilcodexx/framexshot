@@ -12,7 +12,9 @@ use crate::image::{
     RenderSettings,
 };
 use crate::ocr::recognize_text_from_image;
-use crate::screenshot::{capture_all_monitors as capture_monitors, capture_primary_monitor, MonitorShot};
+use crate::screenshot::{
+    capture_all_monitors as capture_monitors, capture_primary_monitor, MonitorShot,
+};
 use crate::utils::{file_to_data_uri, generate_filename, get_desktop_path};
 
 static PENDING_SCREENSHOT_B64: Mutex<Option<String>> = Mutex::new(None);
@@ -95,7 +97,12 @@ pub async fn capture_region(
     save_dir: String,
 ) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let region = CropRegion { x, y, width, height };
+        let region = CropRegion {
+            x,
+            y,
+            width,
+            height,
+        };
         crop_image(&screenshot_path, region, &save_dir)
     })
     .await
@@ -108,11 +115,9 @@ pub async fn render_image_with_effects_rust(
     image_path: String,
     settings: RenderSettings,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        render_image_with_effects(&image_path, settings)
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    tauri::async_runtime::spawn_blocking(move || render_image_with_effects(&image_path, settings))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Save an edited image from base64 data
@@ -327,8 +332,8 @@ pub async fn native_capture_ocr_region(save_dir: String) -> Result<String, Strin
 
     let path_clone = screenshot_path.clone();
     let recognized_text = tauri::async_runtime::spawn_blocking(move || {
-        let recognized_text = recognize_text_from_image(&path_clone)
-            .map_err(|e| format!("OCR failed: {}", e))?;
+        let recognized_text =
+            recognize_text_from_image(&path_clone).map_err(|e| format!("OCR failed: {}", e))?;
 
         copy_text_to_clipboard(&recognized_text)
             .map_err(|e| format!("Failed to copy text to clipboard: {}", e))?;
@@ -415,24 +420,34 @@ pub async fn show_quick_overlay(
             let physical_height = overlay_height * scale_factor;
             let physical_margin = margin * scale_factor;
 
-            target_x = monitor.position().x as f64
-                + monitor.size().width as f64
+            target_x = monitor.position().x as f64 + monitor.size().width as f64
                 - physical_width
                 - physical_margin;
 
-            target_y = monitor.position().y as f64
-                + monitor.size().height as f64
+            target_y = monitor.position().y as f64 + monitor.size().height as f64
                 - physical_height
                 - physical_margin;
         }
     }
 
-    let _ = overlay.set_size(tauri::Size::Logical(tauri::LogicalSize::new(overlay_width, overlay_height)));
-    let _ = overlay.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(target_x as i32, target_y as i32)));
+    let _ = overlay.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+        overlay_width,
+        overlay_height,
+    )));
+    let _ = overlay.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+        target_x as i32,
+        target_y as i32,
+    )));
     let _ = overlay.set_always_on_top(true);
 
     // Emit BEFORE showing — overlay receives data_url and renders screenshot instantly
-    let _ = app.emit("overlay-show-capture", OverlayPayload { path: screenshot_path, data_url });
+    let _ = app.emit(
+        "overlay-show-capture",
+        OverlayPayload {
+            path: screenshot_path,
+            data_url,
+        },
+    );
 
     let _ = overlay.show();
     let _ = overlay.set_focus();
@@ -532,7 +547,9 @@ pub async fn read_file_as_base64(path: String) -> Result<String, String> {
 #[tauri::command]
 pub async fn capture_screen_for_selector(app_handle: AppHandle) -> Result<String, String> {
     {
-        let lock = PENDING_SCREENSHOT_B64.lock().map_err(|e| format!("Mutex: {}", e))?;
+        let lock = PENDING_SCREENSHOT_B64
+            .lock()
+            .map_err(|e| format!("Mutex: {}", e))?;
         if let Some(ref data) = *lock {
             return Ok(data.clone());
         }
@@ -545,7 +562,9 @@ pub async fn capture_screen_for_selector(app_handle: AppHandle) -> Result<String
         let _ = std::fs::remove_file(&path);
 
         {
-            let mut lock = PENDING_SCREENSHOT_B64.lock().map_err(|e| format!("Mutex: {}", e))?;
+            let mut lock = PENDING_SCREENSHOT_B64
+                .lock()
+                .map_err(|e| format!("Mutex: {}", e))?;
             *lock = Some(data_uri.clone());
         }
 
@@ -571,17 +590,26 @@ pub async fn crop_and_save_region(
         }
 
         let data_uri = {
-            let mut lock = PENDING_SCREENSHOT_B64.lock().map_err(|e| format!("Mutex: {}", e))?;
-            lock.take().ok_or("No pending screenshot — call interactive capture first")?
+            let mut lock = PENDING_SCREENSHOT_B64
+                .lock()
+                .map_err(|e| format!("Mutex: {}", e))?;
+            lock.take()
+                .ok_or("No pending screenshot — call interactive capture first")?
         };
 
-        use base64::{engine::general_purpose, Engine as _};
         use crate::utils::ensure_dir;
+        use base64::{engine::general_purpose, Engine as _};
         use std::io::Cursor;
 
-        let raw = data_uri.splitn(2, ',').nth(1).ok_or("Malformed base64 data URI")?;
-        let bytes = general_purpose::STANDARD.decode(raw).map_err(|e| format!("Base64 decode failed: {}", e))?;
-        let img = image::load_from_memory(&bytes).map_err(|e| format!("Failed to decode image: {}", e))?;
+        let raw = data_uri
+            .splitn(2, ',')
+            .nth(1)
+            .ok_or("Malformed base64 data URI")?;
+        let bytes = general_purpose::STANDARD
+            .decode(raw)
+            .map_err(|e| format!("Base64 decode failed: {}", e))?;
+        let img = image::load_from_memory(&bytes)
+            .map_err(|e| format!("Failed to decode image: {}", e))?;
 
         let iw = img.width();
         let ih = img.height();
@@ -592,7 +620,10 @@ pub async fn crop_and_save_region(
         let ch = height.min(ih.saturating_sub(cy));
 
         if cw == 0 || ch == 0 {
-            return Err(format!("Region ({},{} {}x{}) is outside bounds ({}x{})", x, y, width, height, iw, ih));
+            return Err(format!(
+                "Region ({},{} {}x{}) is outside bounds ({}x{})",
+                x, y, width, height, iw, ih
+            ));
         }
 
         let cropped = img.crop_imm(cx, cy, cw, ch);
@@ -603,7 +634,8 @@ pub async fn crop_and_save_region(
         let out = dest_dir.join(&fname);
 
         let mut bytes_buf = Vec::new();
-        cropped.write_to(&mut Cursor::new(&mut bytes_buf), image::ImageFormat::Png)
+        cropped
+            .write_to(&mut Cursor::new(&mut bytes_buf), image::ImageFormat::Png)
             .map_err(|e| format!("Failed to encode cropped image: {}", e))?;
 
         std::fs::write(&out, &bytes_buf).map_err(|e| format!("Failed to save: {}", e))?;

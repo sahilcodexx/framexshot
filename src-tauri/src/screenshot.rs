@@ -196,11 +196,13 @@ fn get_wayland_outputs() -> Vec<String> {
                 .split('{')
                 .skip(1)
                 .filter_map(|chunk| {
-                    chunk.split('"').enumerate().find_map(|(i, s)| {
-                        if s == "name" { Some(i) } else { None }
-                    }).and_then(|name_idx| {
-                        chunk.split('"').nth(name_idx + 2).map(|s| s.to_string())
-                    })
+                    chunk
+                        .split('"')
+                        .enumerate()
+                        .find_map(|(i, s)| if s == "name" { Some(i) } else { None })
+                        .and_then(|name_idx| {
+                            chunk.split('"').nth(name_idx + 2).map(|s| s.to_string())
+                        })
                 })
                 .collect();
             if !names.is_empty() {
@@ -216,13 +218,7 @@ fn get_wayland_outputs() -> Vec<String> {
             let names: Vec<String> = text
                 .split('"')
                 .enumerate()
-                .filter_map(|(i, s)| {
-                    if s == "name" {
-                        Some(i)
-                    } else {
-                        None
-                    }
-                })
+                .filter_map(|(i, s)| if s == "name" { Some(i) } else { None })
                 .filter_map(|name_idx| text.split('"').nth(name_idx + 2).map(|s| s.to_string()))
                 .collect();
             if !names.is_empty() {
@@ -251,11 +247,21 @@ fn capture_single_monitor_xcap(monitor: &Monitor, save_path: &PathBuf) -> AppRes
         .save(&screenshot_path)
         .map_err(|e| format!("Failed to save screenshot: {}", e))?;
 
-    let x = monitor.x().map_err(|e| format!("Failed to get monitor x: {}", e))?;
-    let y = monitor.y().map_err(|e| format!("Failed to get monitor y: {}", e))?;
-    let width = monitor.width().map_err(|e| format!("Failed to get monitor width: {}", e))?;
-    let height = monitor.height().map_err(|e| format!("Failed to get monitor height: {}", e))?;
-    let scale_factor = monitor.scale_factor().map_err(|e| format!("Failed to get scale factor: {}", e))?;
+    let x = monitor
+        .x()
+        .map_err(|e| format!("Failed to get monitor x: {}", e))?;
+    let y = monitor
+        .y()
+        .map_err(|e| format!("Failed to get monitor y: {}", e))?;
+    let width = monitor
+        .width()
+        .map_err(|e| format!("Failed to get monitor width: {}", e))?;
+    let height = monitor
+        .height()
+        .map_err(|e| format!("Failed to get monitor height: {}", e))?;
+    let scale_factor = monitor
+        .scale_factor()
+        .map_err(|e| format!("Failed to get scale factor: {}", e))?;
 
     Ok(MonitorShot {
         id: monitor_id,

@@ -4,4 +4,3 @@
 fn main() {
     framexshot_lib::run()
 }
-

@@ -152,10 +152,15 @@ mod tests {
         let result = cleanup_temp_files();
         assert!(result.is_ok());
 
-        assert!(!dummy_screenshot.exists(), "Temporary screenshot should have been cleaned up");
-        assert!(dummy_other.exists(), "Non-screenshot file should be preserved");
+        assert!(
+            !dummy_screenshot.exists(),
+            "Temporary screenshot should have been cleaned up"
+        );
+        assert!(
+            dummy_other.exists(),
+            "Non-screenshot file should be preserved"
+        );
 
         let _ = std::fs::remove_file(&dummy_other);
     }
 }
-

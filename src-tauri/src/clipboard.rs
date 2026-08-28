@@ -161,8 +161,8 @@ pub fn copy_image_to_clipboard(image_path: &str) -> AppResult<()> {
     use std::path::Path;
 
     let path = Path::new(image_path);
-    let img = image::open(path)
-        .map_err(|e| format!("Failed to open image for clipboard: {}", e))?;
+    let img =
+        image::open(path).map_err(|e| format!("Failed to open image for clipboard: {}", e))?;
 
     let rgba = img.to_rgba8();
     let (width, height) = rgba.dimensions();
@@ -173,8 +173,7 @@ pub fn copy_image_to_clipboard(image_path: &str) -> AppResult<()> {
         bytes: rgba.into_raw().into(),
     };
 
-    let mut clipboard = Clipboard::new()
-        .map_err(|e| format!("Failed to open clipboard: {}", e))?;
+    let mut clipboard = Clipboard::new().map_err(|e| format!("Failed to open clipboard: {}", e))?;
 
     clipboard
         .set_image(image_data)
@@ -188,8 +187,7 @@ pub fn copy_image_to_clipboard(image_path: &str) -> AppResult<()> {
 pub fn copy_text_to_clipboard(text: &str) -> AppResult<()> {
     use arboard::Clipboard;
 
-    let mut clipboard = Clipboard::new()
-        .map_err(|e| format!("Failed to open clipboard: {}", e))?;
+    let mut clipboard = Clipboard::new().map_err(|e| format!("Failed to open clipboard: {}", e))?;
 
     clipboard
         .set_text(text)
@@ -197,4 +195,3 @@ pub fn copy_text_to_clipboard(text: &str) -> AppResult<()> {
 
     Ok(())
 }
-
