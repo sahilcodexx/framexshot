@@ -236,11 +236,10 @@ jobs:
         # it must not be passed through to the JS Tauri CLI.
         run: pnpm exec tauri build --bundles appimage
 
-      - name: Patch AppImage runtime (fuse2 + fuse3 + extract fallback)
+      - name: Verify AppImage
         shell: bash
         run: |
           set -euo pipefail
-
           APPIMAGE=$(find src-tauri/target/release/bundle/appimage \
             -name "*.AppImage" 2>/dev/null | head -1)
           if [ -z "$APPIMAGE" ]; then
@@ -248,54 +247,18 @@ jobs:
             exit 1
           fi
           echo "Found AppImage: $APPIMAGE ($(stat -c%s "$APPIMAGE") bytes)"
-
-          # Download the type2-runtime which supports:
-          #   libfuse2   — original AppImages
-          #   libfuse3   — modern Arch / CachyOS
-          #   extract    — APPIMAGE_EXTRACT_AND_RUN=1 fallback (no FUSE at all)
-          RUNTIME_URL="https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64"
-          curl -fsSL "$RUNTIME_URL" -o /tmp/runtime-new
-          chmod +x /tmp/runtime-new
-          echo "Downloaded new runtime: $(stat -c%s /tmp/runtime-new) bytes"
-
-          # The AppImage format is:  [ runtime binary ][ squashfs filesystem ]
-          # Squashfs magic on little-endian x86: 'hsqs' = 0x68 0x73 0x71 0x73
-          # We find this offset, slice off the runtime, and prepend the new one.
-          # We can't use a heredoc inside the YAML literal block (the leading `<<`
-          # is parsed as a YAML merge key by the action's parser), so we run the
-          # Python lookup as a one-liner with -c.
-          SQ_OFFSET=$(python3 -c 'import sys; d=open(sys.argv[1],"rb").read(8*1024*1024); o=d.find(b"hsqs"); print(-1 if o<=0 else o)' "$APPIMAGE")
-
-          if [ "$SQ_OFFSET" -le 0 ]; then
-            echo "ERROR: squashfs magic 'hsqs' not found in AppImage"
-            exit 1
-          fi
-          echo "Squashfs starts at byte offset: $SQ_OFFSET"
-
-          # Rebuild: new runtime binary + original squashfs payload.
-          # 'tail -c +N' starts reading at the Nth byte (1-indexed),
-          # so +((SQ_OFFSET+1)) skips the old runtime exactly.
-          PATCHED=/tmp/framexshot-patched.AppImage
-          {
-            cat /tmp/runtime-new
-            tail -c "+$((SQ_OFFSET + 1))" "$APPIMAGE"
-          } > "$PATCHED"
-          chmod +x "$PATCHED"
-
-          ORIG_SIZE=$(stat -c%s "$APPIMAGE")
-          PATCH_SIZE=$(stat -c%s "$PATCHED")
-          echo "Original size: $ORIG_SIZE  Patched size:  $PATCH_SIZE"
-
-          # Sanity check: sizes should be close (only the runtime changed)
-          DELTA=$(( PATCH_SIZE - ORIG_SIZE ))
-          ABSDELTA=${DELTA#-}
-          if [ "$ABSDELTA" -gt $((2 * 1024 * 1024)) ]; then
-            echo "ERROR: size delta ${DELTA} bytes is suspiciously large; aborting"
-            exit 1
-          fi
-
-          cp "$PATCHED" "$APPIMAGE"
-          echo "Runtime patched successfully: $APPIMAGE"
+          file "$APPIMAGE"
+          echo "AppImage verified; uploading as-is (no runtime patch — see note below)."
+          # NOTE: an earlier version of this step tried to "patch" the AppImage
+          # by slicing off linuxdeploy's bundled runtime and prepending the
+          # newer AppImage type2-runtime (fuse2 + fuse3 + extract-mode). That
+          # patch was wrong: the squashfs is not at a fixed offset, finding
+          # it requires parsing the 96-byte superblock, and the resulting
+          # artifact was always corrupt (verified: zero valid SquashFS 4.x
+          # superblocks in the v1.0.5 AppImage). The AppImage that linuxdeploy
+          # produces on ubuntu-24.04 is a working Type 1 AppImage as-is. Users
+          # on distros without libfuse2 (e.g. CachyOS) can install fuse2 from
+          # AUR or set APPIMAGE_EXTRACT_AND_RUN=1.
 
       - name: Resolve app version
         run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
