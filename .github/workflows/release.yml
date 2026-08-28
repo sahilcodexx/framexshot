@@ -113,6 +113,13 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Disable binary stripping in linuxdeploy's bundled GNU strip 2.35.
+          # Arch / CachyOS libraries contain .relr.dyn RELR relocations that
+          # strip 2.35 (2021) does not understand and corrupts. NO_STRIP=1 is
+          # the official linuxdeploy env var that skips the strip pass entirely.
+          # The strip in Cargo.toml [profile.release] still runs (that uses the
+          # host's strip, which is new enough on the Ubuntu 24.04 runner).
+          NO_STRIP: "1"
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'FrameXShot ${{ github.ref_name }}'

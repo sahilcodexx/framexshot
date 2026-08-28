@@ -1,28 +1,31 @@
 //! Cross-desktop capture fallback chains (X11 + Wayland)
 //!
-//! Every desktop ships a different set of screenshot tools. Instead of one
-//! hard-coded path, we probe them in priority order and fall through until one
-//! succeeds. Order matters:
+//! Probe tools in priority order, fall through until one succeeds.
 //!
-//!   Region:
-//!     cosmic-screenshot (COSMIC) → spectacle (KDE) → grim+slurp (wlroots) →
-//!     org.gnome.Shell.Screenshot SelectArea (GNOME ≥42, works in Flatpak) →
-//!     gnome-screenshot (legacy GNOME) → maim/scrot (X11)
+//! Region:
+//!   cosmic-screenshot → spectacle (KDE) → grim+slurp (wlroots/Hyprland) →
+//!   grimblast area (Hyprland alternative) → hyprshot region (Hyprland) →
+//!   GNOME Shell SelectArea D-Bus → gnome-screenshot → maim → scrot
 //!
-//!   Fullscreen:
-//!     cosmic-screenshot → spectacle → grim →
-//!     org.gnome.Shell.Screenshot (GNOME) → xdg-desktop-portal Screenshot
-//!     (universal — works on every desktop with a portal) →
-//!     gnome-screenshot → scrot (X11)
+//! Fullscreen:
+//!   cosmic-screenshot → spectacle → grim (wlroots/Hyprland) →
+//!   grimblast screen → hyprshot output → GNOME Shell Screenshot D-Bus →
+//!   xdg-desktop-portal Screenshot (fixed, universal) → gnome-screenshot → scrot
 //!
-//! The D-Bus paths use `zbus`, which is pure-Rust and already in the
-//! dependency tree via xcap, so nothing extra is compiled. They are the only
-//! fallbacks that work inside the Flatpak sandbox (no grim/slurp/scrot there).
+//! Window:
+//!   COSMIC → spectacle → grimblast active (Hyprland) → hyprshot window →
+//!   hyprctl+grim (Hyprland — always available) → GNOME Shell ScreenshotWindow →
+//!   gnome-screenshot -w → scrot -u → fallback to region
+//!
+//! D-Bus paths use zbus (pure-Rust, already in the tree via xcap) and are the
+//! only fallbacks that work inside the Flatpak sandbox.
 
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-/// Check if we're on Wayland
+// ── Environment helpers ────────────────────────────────────────────────────
+
+/// True when running under Wayland.
 pub fn is_wayland() -> bool {
     std::env::var("WAYLAND_DISPLAY").is_ok()
         || std::env::var("XDG_SESSION_TYPE")
@@ -30,47 +33,37 @@ pub fn is_wayland() -> bool {
             .unwrap_or(false)
 }
 
-/// True if we're running inside a Flatpak sandbox. Inside a Flatpak the
-/// `$PATH` is the Flatpak's own `/app/bin:/usr/bin`, so `grim`/`slurp`/
-/// `spectacle` etc. installed on the host are invisible. We have to use
-/// `flatpak-spawn --host` to reach them — the official, supported way
-/// to escape the sandbox for a single tool without giving up the rest
-/// of the sandbox.
+/// True when running inside a Flatpak sandbox.
+/// `/.flatpak-info` is always present inside a Flatpak and never outside it.
 pub fn is_flatpak() -> bool {
-    // The Flatpak runtime always sets /.flatpak-info; nothing outside
-    // a Flatpak ever creates that path. The env var is a redundant
-    // belt-and-braces check.
     Path::new("/.flatpak-info").exists() || std::env::var_os("FLATPAK_ID").is_some()
 }
 
-/// Resolve a binary invocation. Inside a Flatpak we wrap the command in
-/// `flatpak-spawn --host` so the host's `grim`/`slurp`/etc. are reachable.
-/// Outside a Flatpak it's a plain `Command::new(name)` (so we don't fork a
-/// process just to test PATH membership).
+/// Build a Command for a host binary.
+/// Inside a Flatpak we wrap in `flatpak-spawn --host` so the host's
+/// grim/slurp/spectacle etc. are reachable. Outside a Flatpak it's a
+/// plain Command (inheriting the full env, including WAYLAND_DISPLAY).
 pub fn host_command(name: &str) -> Command {
     if is_flatpak() {
         let mut c = Command::new("flatpak-spawn");
-        c.arg("--host");
-        c.arg(name);
+        c.arg("--host").arg(name);
         c
     } else {
         Command::new(name)
     }
 }
 
-/// Check if a binary is on PATH. Inside a Flatpak we use
-/// `flatpak-spawn --host which <name>` so we test the *host*'s PATH,
-/// not the Flatpak's empty one. Outside a Flatpak it's a pure-Rust
-/// walk of `$PATH` (no `which` dependency — some minimal installs
-/// don't ship `which`).
+/// Check whether `name` is executable on the effective PATH.
+/// Inside a Flatpak this tests the *host* PATH via `flatpak-spawn --host`.
 pub fn has_binary(name: &str) -> bool {
     if is_flatpak() {
-        // Cheap test: ask the host to resolve the binary. We treat
-        // any non-error exit as "present" — `flatpak-spawn` itself
-        // always exits 0 when it can talk to the host, even if the
-        // inner `which` fails; so we look at the produced stdout.
         return Command::new("flatpak-spawn")
-            .args(["--host", "sh", "-c", &format!("command -v {} >/dev/null 2>&1", name)])
+            .args([
+                "--host",
+                "sh",
+                "-c",
+                &format!("command -v {} >/dev/null 2>&1", name),
+            ])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
@@ -94,25 +87,33 @@ pub fn has_binary(name: &str) -> bool {
                 .unwrap_or(false)
         }
         #[cfg(not(unix))]
-        {
-            true
-        }
+        true
     })
 }
 
-/// Interactively capture a user-selected region into `path`.
+// ── Public capture entry-points ────────────────────────────────────────────
+
+/// Interactively capture a user-selected region.
 pub fn capture_region(path: &Path) -> Result<(), String> {
     if is_wayland() {
-        // COSMIC: cosmic-screenshot --interactive=true
+        // COSMIC Desktop
         if has_binary("cosmic-screenshot") && cosmic_region(path).is_ok() {
             return Ok(());
         }
-        // KDE Plasma: spectacle --region (works on Wayland and X11)
+        // KDE Plasma (Wayland and X11)
         if has_binary("spectacle") && spectacle_region(path).is_ok() {
             return Ok(());
         }
-        // wlroots (sway/hyprland): grim + slurp
+        // wlroots / Hyprland: grim + slurp
         if has_binary("grim") && has_binary("slurp") && grim_slurp_region(path).is_ok() {
+            return Ok(());
+        }
+        // Hyprland alternative: grimblast (wraps grim+slurp, often installed)
+        if has_binary("grimblast") && grimblast(path, "area").is_ok() {
+            return Ok(());
+        }
+        // Hyprland alternative: hyprshot
+        if has_binary("hyprshot") && hyprshot(path, "region").is_ok() {
             return Ok(());
         }
         // Modern GNOME (42+): interactive area picker over D-Bus
@@ -120,108 +121,89 @@ pub fn capture_region(path: &Path) -> Result<(), String> {
         if gnome_shell_region(path).is_ok() {
             return Ok(());
         }
-        // Legacy GNOME: gnome-screenshot -a
-        if has_binary("gnome-screenshot") {
-            let status = host_command("gnome-screenshot")
-                .arg("-a")
-                .arg("-f")
-                .arg(path)
-                .status()
-                .map_err(|e| format!("Failed to run gnome-screenshot: {}", e))?;
-            if status.success() && path.exists() {
-                return Ok(());
-            }
+        // Legacy GNOME
+        if has_binary("gnome-screenshot") && gnome_screenshot(path, &["-a"]).is_ok() {
+            return Ok(());
         }
-        return Err(
-            "No screenshot tool available on this Wayland desktop. Install cosmic-screenshot (COSMIC), spectacle (KDE), or grim+slurp (Sway/Hyprland)."
-                .to_string(),
-        );
+        return Err("No screenshot tool found for Wayland region capture. \
+             Install grim+slurp (wlroots/Hyprland), spectacle (KDE), \
+             or cosmic-screenshot (COSMIC)."
+            .to_string());
     }
 
     // X11
     if has_binary("spectacle") && spectacle_region(path).is_ok() {
         return Ok(());
     }
-    // GNOME Shell's D-Bus picker works on X11 sessions too (covers default
-    // GNOME X11 installs that ship no screenshot CLI tools)
     #[cfg(target_os = "linux")]
     if gnome_shell_region(path).is_ok() {
         return Ok(());
     }
-    if has_binary("maim") {
-        let status = host_command("maim")
-            .arg("-s")
-            .arg(path)
-            .status()
-            .map_err(|e| format!("Failed to run maim: {}", e))?;
-        if status.success() && path.exists() {
-            return Ok(());
-        }
-    }
-    if has_binary("scrot") {
-        let status = host_command("scrot")
-            .arg("-s")
-            .arg(path)
-            .status()
-            .map_err(|e| format!("Failed to run scrot: {}", e))?;
-        if status.success() && path.exists() {
-            return Ok(());
-        }
-    }
-
-    Err("No screenshot tool found on this desktop. Install scrot or maim (X11), or spectacle (KDE).".to_string())
-}
-
-/// Capture the full screen (or primary monitor) into `path`.
-pub fn capture_fullscreen(path: &Path) -> Result<(), String> {
-    if is_wayland() {
-        if has_binary("cosmic-screenshot") && cosmic_fullscreen(path).is_ok() {
-            return Ok(());
-        }
-        if has_binary("spectacle") && spectacle_fullscreen(path).is_ok() {
-            return Ok(());
-        }
-        if has_binary("grim") {
-            let status = host_command("grim")
-                .arg(path)
-                .status()
-                .map_err(|e| format!("Failed to run grim: {}", e))?;
-            if status.success() && path.exists() {
+    for tool in &[("maim", &["-s"][..]), ("scrot", &["-s"][..])] {
+        if has_binary(tool.0) {
+            let mut cmd = host_command(tool.0);
+            for arg in tool.1 {
+                cmd.arg(arg);
+            }
+            cmd.arg(path);
+            if cmd.status().map(|s| s.success()).unwrap_or(false) && path.exists() {
                 return Ok(());
             }
         }
-        // Modern GNOME (42+): D-Bus Screenshot
+    }
+    Err(
+        "No screenshot tool found for X11 region capture. Install scrot, maim, or spectacle."
+            .to_string(),
+    )
+}
+
+/// Capture the full screen (all outputs or primary monitor).
+pub fn capture_fullscreen(path: &Path) -> Result<(), String> {
+    if is_wayland() {
+        // COSMIC
+        if has_binary("cosmic-screenshot") && cosmic_fullscreen(path).is_ok() {
+            return Ok(());
+        }
+        // KDE
+        if has_binary("spectacle") && spectacle_fullscreen(path).is_ok() {
+            return Ok(());
+        }
+        // wlroots / Hyprland: bare grim (captures all outputs)
+        if has_binary("grim") && grim_fullscreen(path).is_ok() {
+            return Ok(());
+        }
+        // Hyprland: grimblast
+        if has_binary("grimblast") && grimblast(path, "screen").is_ok() {
+            return Ok(());
+        }
+        // Hyprland: hyprshot
+        if has_binary("hyprshot") && hyprshot(path, "output").is_ok() {
+            return Ok(());
+        }
+        // Modern GNOME (42+)
         #[cfg(target_os = "linux")]
         if gnome_shell_fullscreen(path).is_ok() {
             return Ok(());
         }
         // Universal: xdg-desktop-portal (works on every desktop, incl. Flatpak)
+        // This is the last Wayland resort — grim should already have succeeded.
         #[cfg(target_os = "linux")]
         if portal_fullscreen(path).is_ok() {
             return Ok(());
         }
-        // Legacy GNOME
-        if has_binary("gnome-screenshot") {
-            let status = host_command("gnome-screenshot")
-                .arg("-f")
-                .arg(path)
-                .status()
-                .map_err(|e| format!("Failed to run gnome-screenshot: {}", e))?;
-            if status.success() && path.exists() {
-                return Ok(());
-            }
+        if has_binary("gnome-screenshot") && gnome_screenshot(path, &[]).is_ok() {
+            return Ok(());
         }
-        return Err(
-            "No screenshot tool available on this Wayland desktop. Install cosmic-screenshot (COSMIC), spectacle (KDE), or grim (Sway/Hyprland)."
-                .to_string(),
-        );
+        return Err("No screenshot tool found for Wayland fullscreen capture. \
+             Install grim (wlroots/Hyprland), spectacle (KDE), or \
+             cosmic-screenshot (COSMIC)."
+            .to_string());
     }
 
     // X11
     if has_binary("spectacle") && spectacle_fullscreen(path).is_ok() {
         return Ok(());
     }
-    // GNOME Shell D-Bus covers X11 GNOME sessions that lack CLI tools
     #[cfg(target_os = "linux")]
     if gnome_shell_fullscreen(path).is_ok() {
         return Ok(());
@@ -230,105 +212,81 @@ pub fn capture_fullscreen(path: &Path) -> Result<(), String> {
         let status = host_command("scrot")
             .arg(path)
             .status()
-            .map_err(|e| format!("Failed to run scrot: {}", e))?;
+            .map_err(|e| format!("scrot failed: {}", e))?;
         if status.success() && path.exists() {
             return Ok(());
         }
     }
-    // Universal portal also works on X11 desktops with xdg-desktop-portal
     #[cfg(target_os = "linux")]
     if portal_fullscreen(path).is_ok() {
         return Ok(());
     }
-    if has_binary("gnome-screenshot") {
-        let status = host_command("gnome-screenshot")
-            .arg("-f")
-            .arg(path)
-            .status()
-            .map_err(|e| format!("Failed to run gnome-screenshot: {}", e))?;
-        if status.success() && path.exists() {
-            return Ok(());
-        }
+    if has_binary("gnome-screenshot") && gnome_screenshot(path, &[]).is_ok() {
+        return Ok(());
     }
-
-    Err("No screenshot tool found on this desktop. Install scrot (X11) or spectacle (KDE).".to_string())
+    Err(
+        "No screenshot tool found for X11 fullscreen capture. Install scrot or spectacle."
+            .to_string(),
+    )
 }
 
-/// Capture the focused window into `path`.
+/// Capture the focused/active window.
 pub fn capture_window(path: &Path) -> Result<(), String> {
     if is_wayland() {
-        // COSMIC has no dedicated window mode — fall back to its region picker
+        // COSMIC has no dedicated window mode — use region picker
         if has_binary("cosmic-screenshot") {
             return capture_region(path);
         }
-        // KDE Plasma: spectacle --window
-        if has_binary("spectacle") {
-            let status = host_command("spectacle")
-                .arg("--window")
-                .arg("-b")
-                .arg("-n")
-                .arg("-o")
-                .arg(path)
-                .status()
-                .map_err(|e| format!("Failed to run spectacle: {}", e))?;
-            if status.success() && path.exists() {
-                return Ok(());
-            }
+        // KDE
+        if has_binary("spectacle") && spectacle_window(path).is_ok() {
+            return Ok(());
         }
-        // Modern GNOME (42+): D-Bus ScreenshotWindow
+        // Hyprland: grimblast active (focused window)
+        if has_binary("grimblast") && grimblast(path, "active").is_ok() {
+            return Ok(());
+        }
+        // Hyprland: hyprshot -m window
+        if has_binary("hyprshot") && hyprshot(path, "window").is_ok() {
+            return Ok(());
+        }
+        // Hyprland (always available): hyprctl activewindow + grim -g
+        // hyprctl is always installed when Hyprland is running.
+        if has_binary("hyprctl") && has_binary("grim") && hyprctl_grim_window(path).is_ok() {
+            return Ok(());
+        }
+        // Modern GNOME (42+)
         #[cfg(target_os = "linux")]
         if gnome_shell_window(path).is_ok() {
             return Ok(());
         }
-        // Legacy GNOME
-        if has_binary("gnome-screenshot") {
-            let status = host_command("gnome-screenshot")
-                .arg("-w")
-                .arg("-f")
-                .arg(path)
-                .status()
-                .map_err(|e| format!("Failed to run gnome-screenshot: {}", e))?;
-            if status.success() && path.exists() {
-                return Ok(());
-            }
+        if has_binary("gnome-screenshot") && gnome_screenshot(path, &["-w"]).is_ok() {
+            return Ok(());
         }
-        return Err(
-            "No window capture tool available on this Wayland desktop. Install spectacle (KDE) or cosmic-screenshot (COSMIC)."
-                .to_string(),
-        );
+        return Err("No window capture tool found for Wayland. \
+             Install grimblast or hyprshot (Hyprland), spectacle (KDE), \
+             or cosmic-screenshot (COSMIC)."
+            .to_string());
     }
 
     // X11
-    if has_binary("spectacle") {
-        let status = host_command("spectacle")
-            .arg("--window")
-            .arg("-b")
-            .arg("-n")
-            .arg("-o")
-            .arg(path)
-            .status()
-            .map_err(|e| format!("Failed to run spectacle: {}", e))?;
-        if status.success() && path.exists() {
-            return Ok(());
-        }
+    if has_binary("spectacle") && spectacle_window(path).is_ok() {
+        return Ok(());
     }
-    // GNOME Shell window capture works on X11 sessions too
     #[cfg(target_os = "linux")]
     if gnome_shell_window(path).is_ok() {
         return Ok(());
     }
     if has_binary("scrot") {
         let status = host_command("scrot")
-            .arg("-u")
+            .arg("-u") // focused window
             .arg(path)
             .status()
-            .map_err(|e| format!("Failed to run scrot: {}", e))?;
+            .map_err(|e| format!("scrot failed: {}", e))?;
         if status.success() && path.exists() {
             return Ok(());
         }
     }
-
-    Err("No window capture tool found on this desktop. Install spectacle (KDE) or scrot (X11).".to_string())
+    Err("No window capture tool found for X11. Install scrot or spectacle.".to_string())
 }
 
 // ── Per-tool helpers ───────────────────────────────────────────────────────
@@ -340,42 +298,26 @@ fn cosmic_region(path: &Path) -> Result<(), String> {
         .unwrap_or_else(|| "/tmp".to_string());
 
     let output = host_command("cosmic-screenshot")
-        .arg("--interactive=true")
-        .arg("--modal=false")
-        .arg("--notify=false")
-        .arg("-s")
+        .args([
+            "--interactive=true",
+            "--modal=false",
+            "--notify=false",
+            "-s",
+        ])
         .arg(&save_dir)
         .output()
-        .map_err(|e| format!("Failed to run cosmic-screenshot: {}", e))?;
+        .map_err(|e| format!("cosmic-screenshot: {}", e))?;
 
     if !output.status.success() {
         return Err("cosmic-screenshot failed".to_string());
     }
-
-    // cosmic-screenshot prints the saved path to stdout
     let out_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if !out_path.is_empty() && Path::new(&out_path).exists() {
-        // Move/copy into the requested path so the caller finds its file
         return std::fs::copy(&out_path, path)
             .map(|_| ())
-            .map_err(|e| format!("Failed to copy cosmic-screenshot result: {}", e));
+            .map_err(|e| format!("cosmic copy failed: {}", e));
     }
-
-    // Fall back to the most recent PNG in save_dir
-    if let Ok(entries) = std::fs::read_dir(&save_dir) {
-        let mut files: Vec<_> = entries
-            .flatten()
-            .filter(|e| e.path().extension().map(|x| x == "png").unwrap_or(false))
-            .collect();
-        files.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
-        if let Some(last) = files.last() {
-            return std::fs::copy(last.path(), path)
-                .map(|_| ())
-                .map_err(|e| format!("Failed to copy cosmic-screenshot result: {}", e));
-        }
-    }
-
-    Err("cosmic-screenshot completed but no file found".to_string())
+    find_newest_png(&save_dir, path)
 }
 
 fn cosmic_fullscreen(path: &Path) -> Result<(), String> {
@@ -385,180 +327,401 @@ fn cosmic_fullscreen(path: &Path) -> Result<(), String> {
         .unwrap_or_else(|| "/tmp".to_string());
 
     let output = host_command("cosmic-screenshot")
-        .arg("--interactive=false")
-        .arg("--notify=false")
-        .arg("-s")
+        .args(["--interactive=false", "--notify=false", "-s"])
         .arg(&save_dir)
         .output()
-        .map_err(|e| format!("Failed to run cosmic-screenshot: {}", e))?;
+        .map_err(|e| format!("cosmic-screenshot: {}", e))?;
 
     if !output.status.success() {
         return Err("cosmic-screenshot failed".to_string());
     }
-
-    // cosmic-screenshot prints the saved path to stdout
     let out_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if !out_path.is_empty() && Path::new(&out_path).exists() {
         return std::fs::copy(&out_path, path)
             .map(|_| ())
-            .map_err(|e| format!("Failed to copy cosmic-screenshot result: {}", e));
+            .map_err(|e| format!("cosmic copy failed: {}", e));
     }
-
-    // Fall back to the most recent PNG in save_dir
-    if let Ok(entries) = std::fs::read_dir(&save_dir) {
-        let mut files: Vec<_> = entries
-            .flatten()
-            .filter(|e| e.path().extension().map(|x| x == "png").unwrap_or(false))
-            .collect();
-        files.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
-        if let Some(last) = files.last() {
-            return std::fs::copy(last.path(), path)
-                .map(|_| ())
-                .map_err(|e| format!("Failed to copy cosmic-screenshot result: {}", e));
-        }
-    }
-
-    Err("cosmic-screenshot completed but no file found".to_string())
+    find_newest_png(&save_dir, path)
 }
 
 fn spectacle_region(path: &Path) -> Result<(), String> {
-    let status = host_command("spectacle")
-        .arg("--region")
-        .arg("-b")
-        .arg("-n")
-        .arg("-o")
+    let s = host_command("spectacle")
+        .args(["--region", "-b", "-n", "-o"])
         .arg(path)
         .status()
-        .map_err(|e| format!("Failed to run spectacle: {}", e))?;
-
-    if status.success() && path.exists() {
+        .map_err(|e| format!("spectacle: {}", e))?;
+    if s.success() && path.exists() {
         Ok(())
     } else {
-        Err("spectacle was cancelled or failed".to_string())
+        Err("spectacle region failed".to_string())
     }
 }
 
 fn spectacle_fullscreen(path: &Path) -> Result<(), String> {
-    let status = host_command("spectacle")
-        .arg("--fullscreen")
-        .arg("-b")
-        .arg("-n")
-        .arg("-o")
+    let s = host_command("spectacle")
+        .args(["--fullscreen", "-b", "-n", "-o"])
         .arg(path)
         .status()
-        .map_err(|e| format!("Failed to run spectacle: {}", e))?;
-
-    if status.success() && path.exists() {
+        .map_err(|e| format!("spectacle: {}", e))?;
+    if s.success() && path.exists() {
         Ok(())
     } else {
-        Err("spectacle failed to capture the screen".to_string())
+        Err("spectacle fullscreen failed".to_string())
+    }
+}
+
+fn spectacle_window(path: &Path) -> Result<(), String> {
+    let s = host_command("spectacle")
+        .args(["--window", "-b", "-n", "-o"])
+        .arg(path)
+        .status()
+        .map_err(|e| format!("spectacle: {}", e))?;
+    if s.success() && path.exists() {
+        Ok(())
+    } else {
+        Err("spectacle window failed".to_string())
     }
 }
 
 fn grim_slurp_region(path: &Path) -> Result<(), String> {
-    let slurp_output = host_command("slurp")
+    let slurp = host_command("slurp")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
-        .map_err(|e| format!("Failed to run slurp: {}", e))?;
+        .map_err(|e| format!("slurp: {}", e))?;
 
-    if !slurp_output.status.success() {
-        return Err("Screenshot was cancelled or failed".to_string());
+    if !slurp.status.success() {
+        return Err("Screenshot was cancelled".to_string());
     }
-
-    let region = String::from_utf8_lossy(&slurp_output.stdout).trim().to_string();
+    let region = String::from_utf8_lossy(&slurp.stdout).trim().to_string();
     if region.is_empty() {
-        return Err("Screenshot was cancelled or failed".to_string());
+        return Err("Screenshot was cancelled".to_string());
     }
-
-    let status = host_command("grim")
+    let s = host_command("grim")
         .arg("-g")
         .arg(&region)
         .arg(path)
         .status()
-        .map_err(|e| format!("Failed to run grim: {}", e))?;
-
-    if status.success() && path.exists() {
+        .map_err(|e| format!("grim: {}", e))?;
+    if s.success() && path.exists() {
         Ok(())
     } else {
-        Err("grim failed to capture the region".to_string())
+        Err("grim region failed".to_string())
     }
 }
 
-// ── D-Bus fallbacks (pure-Rust zbus, no external binaries) ─────────────────
+fn grim_fullscreen(path: &Path) -> Result<(), String> {
+    // `grim <path>` without -o captures a composite of all outputs.
+    // This is the standard invocation on Hyprland / wlroots for fullscreen.
+    let s = host_command("grim")
+        .arg(path)
+        .status()
+        .map_err(|e| format!("grim: {}", e))?;
+    if s.success() && path.exists() {
+        Ok(())
+    } else {
+        Err("grim fullscreen failed".to_string())
+    }
+}
 
-/// Capture via the xdg-desktop-portal `org.freedesktop.portal.Screenshot`
-/// interface (fullscreen only). Works on GNOME, KDE, COSMIC, wlroots and X11
-/// — and inside the Flatpak sandbox, where none of the CLI tools exist.
+/// grimblast: Hyprland-contrib wrapper around grim.
+/// mode: "area" (region+slurp), "screen" (all outputs), "active" (focused window)
+fn grimblast(path: &Path, mode: &str) -> Result<(), String> {
+    let s = host_command("grimblast")
+        .arg("save")
+        .arg(mode)
+        .arg(path)
+        .status()
+        .map_err(|e| format!("grimblast: {}", e))?;
+    if s.success() && path.exists() {
+        Ok(())
+    } else {
+        Err(format!("grimblast {} failed or was cancelled", mode))
+    }
+}
+
+/// hyprshot: common Hyprland screenshot tool.
+/// mode: "region", "output", "window"
+fn hyprshot(path: &Path, mode: &str) -> Result<(), String> {
+    let dir = path.parent().unwrap_or_else(|| Path::new("/tmp"));
+    let filename = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "hyprshot: invalid filename".to_string())?;
+
+    // hyprshot -m <mode> -o <dir> -f <filename> -s (silent — no notifications)
+    let s = host_command("hyprshot")
+        .arg("-m")
+        .arg(mode)
+        .arg("-o")
+        .arg(dir)
+        .arg("-f")
+        .arg(filename)
+        .arg("-s")
+        .status()
+        .map_err(|e| format!("hyprshot: {}", e))?;
+    if s.success() && path.exists() {
+        Ok(())
+    } else {
+        Err(format!("hyprshot {} failed or was cancelled", mode))
+    }
+}
+
+/// Hyprland window capture via `hyprctl activewindow -j` + `grim -g`.
+/// hyprctl is always present on a running Hyprland system.
+/// The output JSON contains `at: [x, y]` and `size: [w, h]`.
+fn hyprctl_grim_window(path: &Path) -> Result<(), String> {
+    let output = host_command("hyprctl")
+        .args(["activewindow", "-j"])
+        .output()
+        .map_err(|e| format!("hyprctl: {}", e))?;
+
+    if !output.status.success() {
+        return Err("hyprctl activewindow failed".to_string());
+    }
+
+    // Parse the minimal fields we need; avoid pulling in a heavy JSON dep.
+    // The JSON looks like: {"at":[x,y],"size":[w,h],...}
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("hyprctl JSON parse error: {}", e))?;
+
+    let x = json["at"][0].as_i64().ok_or("hyprctl: missing 'at[0]'")?;
+    let y = json["at"][1].as_i64().ok_or("hyprctl: missing 'at[1]'")?;
+    let w = json["size"][0]
+        .as_i64()
+        .ok_or("hyprctl: missing 'size[0]'")?;
+    let h = json["size"][1]
+        .as_i64()
+        .ok_or("hyprctl: missing 'size[1]'")?;
+
+    if w <= 0 || h <= 0 {
+        return Err(format!("hyprctl: degenerate window geometry {}x{}", w, h));
+    }
+
+    // grim geometry format: "x,y wxh"
+    let geometry = format!("{},{} {}x{}", x, y, w, h);
+    let s = host_command("grim")
+        .arg("-g")
+        .arg(&geometry)
+        .arg(path)
+        .status()
+        .map_err(|e| format!("grim (window): {}", e))?;
+
+    if s.success() && path.exists() {
+        Ok(())
+    } else {
+        Err(format!(
+            "grim window capture failed (geometry: {})",
+            geometry
+        ))
+    }
+}
+
+fn gnome_screenshot(path: &Path, extra_args: &[&str]) -> Result<(), String> {
+    let mut cmd = host_command("gnome-screenshot");
+    for arg in extra_args {
+        cmd.arg(arg);
+    }
+    cmd.arg("-f").arg(path);
+    let s = cmd
+        .status()
+        .map_err(|e| format!("gnome-screenshot: {}", e))?;
+    if s.success() && path.exists() {
+        Ok(())
+    } else {
+        Err("gnome-screenshot failed".to_string())
+    }
+}
+
+// ── D-Bus fallbacks (pure-Rust zbus) ──────────────────────────────────────
+
+/// xdg-desktop-portal Screenshot — universal fallback for fullscreen.
+///
+/// Bugs in the old implementation that caused `NotAllowed` on Hyprland:
+///
+/// 1. Missing `parent_window` argument.
+///    The correct D-Bus signature is:
+///      Screenshot(IN s parent_window, IN a{sv} options) → OUT o handle
+///    The old code called `call_method("Screenshot", &options)` — passing
+///    ONLY the options dict, omitting the mandatory parent_window string.
+///
+/// 2. Invalid `filename` option.
+///    The portal spec has no `filename` option. The portal chooses its own
+///    save location and returns it in the response. Passing it was a no-op.
+///
+/// 3. Response URI completely ignored.
+///    The old code checked `if !path.exists()` after a successful response.
+///    The file is NEVER at `path` — the portal writes to its own URI
+///    (returned in `results["uri"]`). So the old code always returned an
+///    error even when the portal succeeded.
+///
+/// 4. `interactive=false` not supported by xdg-desktop-portal-hyprland.
+///    xdph requires user interaction (`interactive=true`) and returns
+///    response code 2 (`NotAllowed`) for non-interactive calls.
+///    Fix: try `interactive=false` first, retry with `interactive=true`
+///    when the portal returns NotAllowed (code 2).
 #[cfg(target_os = "linux")]
 fn portal_fullscreen(path: &Path) -> Result<(), String> {
+    // Try non-interactive first (no dialog — preferred when supported).
+    // On GNOME this captures immediately; on xdph this will return NotAllowed.
+    match portal_screenshot_call(path, false) {
+        Ok(()) => return Ok(()),
+        Err(PortalError::NotAllowed) => {
+            // xdg-desktop-portal-hyprland (and some other backends) reject
+            // interactive=false. Fall through to interactive mode.
+        }
+        Err(PortalError::Cancelled) => return Err("Screenshot was cancelled".to_string()),
+        Err(PortalError::Other(msg)) => {
+            // Non-fatal: the portal might simply not be running (common on
+            // minimal Hyprland setups without xdg-desktop-portal installed).
+            return Err(msg);
+        }
+    }
+
+    // interactive=true — shows the portal's built-in picker (e.g.
+    // hyprland-share-picker on Hyprland). The user selects a monitor.
+    match portal_screenshot_call(path, true) {
+        Ok(()) => Ok(()),
+        Err(PortalError::Cancelled) => Err("Screenshot was cancelled".to_string()),
+        Err(PortalError::NotAllowed) => {
+            Err("xdg-desktop-portal denied screenshot permission".to_string())
+        }
+        Err(PortalError::Other(msg)) => Err(msg),
+    }
+}
+
+#[cfg(target_os = "linux")]
+enum PortalError {
+    Cancelled,  // response code 1
+    NotAllowed, // response code 2
+    Other(String),
+}
+
+/// Make a single `org.freedesktop.portal.Screenshot.Screenshot` call.
+///
+/// Correct D-Bus call:
+///   destination:  org.freedesktop.portal.Desktop
+///   path:         /org/freedesktop/portal/desktop
+///   interface:    org.freedesktop.portal.Screenshot
+///   method:       Screenshot
+///   args:         (parent_window: s = "", options: a{sv})
+///
+/// Response signal on the returned handle object:
+///   interface:  org.freedesktop.portal.Request
+///   signal:     Response
+///   args:       (response: u, results: a{sv})
+///   results["uri"] (s): the file:// URI of the saved screenshot
+#[cfg(target_os = "linux")]
+fn portal_screenshot_call(path: &Path, interactive: bool) -> Result<(), PortalError> {
     use std::collections::HashMap;
     use zbus::blocking::{Connection, Proxy};
     use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
-    let conn = Connection::session().map_err(|e| format!("D-Bus session unavailable: {}", e))?;
+    let conn = Connection::session()
+        .map_err(|e| PortalError::Other(format!("D-Bus session unavailable: {}", e)))?;
+
     let portal = Proxy::new(
         &conn,
         "org.freedesktop.portal.Desktop",
         "/org/freedesktop/portal/desktop",
         "org.freedesktop.portal.Screenshot",
     )
-    .map_err(|e| format!("Cannot reach xdg-desktop-portal: {}", e))?;
+    .map_err(|e| PortalError::Other(format!("Cannot reach xdg-desktop-portal: {}", e)))?;
 
-    let uri = url::Url::from_file_path(path)
-        .map_err(|_| "Invalid save path for portal capture".to_string())?
-        .to_string();
-
+    // options: only the options specified in the portal spec.
+    // "filename" is NOT a valid option and was erroneously included before.
     let mut options: HashMap<&str, Value> = HashMap::new();
-    options.insert("interactive", Value::from(false));
+    options.insert("interactive", Value::from(interactive));
     options.insert("modal", Value::from(false));
-    options.insert("filename", Value::from(uri));
 
+    // Correct call: (parent_window: s, options: a{sv})
+    // parent_window = "" is valid; it means "no parent window / take focus".
     let reply = portal
-        .call_method("Screenshot", &options)
-        .map_err(|e| format!("Portal screenshot call failed: {}", e))?;
+        .call_method("Screenshot", &("", &options))
+        .map_err(|e| PortalError::Other(format!("Portal Screenshot call failed: {}", e)))?;
+
     let request_path: OwnedObjectPath = reply
         .body()
         .deserialize()
-        .map_err(|e| format!("Bad portal reply: {}", e))?;
+        .map_err(|e| PortalError::Other(format!("Bad portal reply body: {}", e)))?;
 
-    // Wait for the Response signal on the request object
+    // Subscribe to the Response signal on the request handle object.
     let request = Proxy::new(
         &conn,
         "org.freedesktop.portal.Desktop",
         request_path.as_str(),
         "org.freedesktop.portal.Request",
     )
-    .map_err(|e| format!("Cannot watch portal request: {}", e))?;
+    .map_err(|e| PortalError::Other(format!("Cannot subscribe to portal request: {}", e)))?;
+
     let mut signals = request
         .receive_signal("Response")
-        .map_err(|e| format!("Cannot subscribe to portal response: {}", e))?;
-    let response_msg = signals
+        .map_err(|e| PortalError::Other(format!("Cannot receive portal response: {}", e)))?;
+
+    let msg = signals
         .next()
-        .ok_or_else(|| "Portal closed without responding".to_string())?;
-    let (response, _results): (u32, HashMap<String, OwnedValue>) = response_msg
+        .ok_or_else(|| PortalError::Other("Portal closed without responding".to_string()))?;
+
+    let (response, results): (u32, HashMap<String, OwnedValue>) = msg
         .body()
         .deserialize()
-        .map_err(|e| format!("Bad portal response: {}", e))?;
+        .map_err(|e| PortalError::Other(format!("Bad Response signal body: {}", e)))?;
 
-    if response != 0 {
-        return Err("Screenshot was cancelled or failed".to_string());
+    match response {
+        0 => { /* success, handled below */ }
+        1 => return Err(PortalError::Cancelled),
+        2 => return Err(PortalError::NotAllowed),
+        n => {
+            return Err(PortalError::Other(format!(
+                "Portal returned error code {}",
+                n
+            )))
+        }
     }
-    if !path.exists() {
-        return Err("Portal reported success but no file was written".to_string());
-    }
-    Ok(())
+
+    // Extract the URI from results["uri"].
+    // The portal NEVER writes to `path` — it picks its own save location.
+    // We must read results["uri"] and copy the file to where we want it.
+    let uri_val = results
+        .get("uri")
+        .ok_or_else(|| PortalError::Other("Portal success but no 'uri' in response".to_string()))?;
+
+    // OwnedValue derefs to Value<'static>; match on the inner Str variant.
+    let uri_str: String = match &**uri_val {
+        Value::Str(s) => s.as_str().to_string(),
+        other => {
+            return Err(PortalError::Other(format!(
+                "Portal URI has unexpected type: {:?}",
+                other
+            )));
+        }
+    };
+
+    // Parse the file:// URI → filesystem path
+    let src = url::Url::parse(&uri_str)
+        .map_err(|e| PortalError::Other(format!("Invalid portal URI '{}': {}", uri_str, e)))?
+        .to_file_path()
+        .map_err(|_| {
+            PortalError::Other(format!("Portal URI '{}' is not a file:// URI", uri_str))
+        })?;
+
+    // Copy from the portal's chosen location to the path the caller requested.
+    std::fs::copy(&src, path).map(|_| ()).map_err(|e| {
+        PortalError::Other(format!(
+            "Failed to copy portal screenshot from {} to {}: {}",
+            src.display(),
+            path.display(),
+            e
+        ))
+    })
 }
 
-/// GNOME Shell exposes an interactive area picker over D-Bus
-/// (`org.gnome.Shell` / `/org/gnome/Shell/Screenshot`). This is the only
-/// interactive region selection that works on modern GNOME (42+) Wayland and
-/// inside the Flatpak sandbox. Returns Err when GNOME Shell is unreachable.
+/// GNOME Shell interactive area picker over D-Bus (GNOME 42+, sandbox-friendly).
 #[cfg(target_os = "linux")]
 fn gnome_shell_region(path: &Path) -> Result<(), String> {
     use zbus::blocking::{Connection, Proxy};
 
-    let conn = Connection::session().map_err(|e| format!("D-Bus session unavailable: {}", e))?;
+    let conn = Connection::session().map_err(|e| format!("D-Bus unavailable: {}", e))?;
     let shell = Proxy::new(
         &conn,
         "org.gnome.Shell",
@@ -567,10 +730,9 @@ fn gnome_shell_region(path: &Path) -> Result<(), String> {
     )
     .map_err(|e| format!("GNOME Shell not reachable: {}", e))?;
 
-    // Interactive rubber-band selection; returns logical coordinates
     let reply = shell
         .call_method("SelectArea", &())
-        .map_err(|e| format!("GNOME Shell SelectArea failed: {}", e))?;
+        .map_err(|e| format!("GNOME Shell SelectArea: {}", e))?;
     let (x, y, width, height): (i32, i32, i32, i32) = reply
         .body()
         .deserialize()
@@ -580,12 +742,11 @@ fn gnome_shell_region(path: &Path) -> Result<(), String> {
         return Err("Screenshot was cancelled".to_string());
     }
 
-    // Capture exactly the selected area
     let filename = path.to_string_lossy().to_string();
     let reply = shell
         .call_method("ScreenshotArea", &(x, y, width, height, false, filename))
-        .map_err(|e| format!("GNOME Shell ScreenshotArea failed: {}", e))?;
-    let (ok, _used): (bool, String) = reply
+        .map_err(|e| format!("GNOME Shell ScreenshotArea: {}", e))?;
+    let (ok, _): (bool, String) = reply
         .body()
         .deserialize()
         .map_err(|e| format!("Bad ScreenshotArea reply: {}", e))?;
@@ -596,12 +757,12 @@ fn gnome_shell_region(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// GNOME Shell fullscreen capture over D-Bus (GNOME 42+, sandbox-friendly).
+/// GNOME Shell fullscreen capture over D-Bus (GNOME 42+).
 #[cfg(target_os = "linux")]
 fn gnome_shell_fullscreen(path: &Path) -> Result<(), String> {
     use zbus::blocking::{Connection, Proxy};
 
-    let conn = Connection::session().map_err(|e| format!("D-Bus session unavailable: {}", e))?;
+    let conn = Connection::session().map_err(|e| format!("D-Bus unavailable: {}", e))?;
     let shell = Proxy::new(
         &conn,
         "org.gnome.Shell",
@@ -613,8 +774,8 @@ fn gnome_shell_fullscreen(path: &Path) -> Result<(), String> {
     let filename = path.to_string_lossy().to_string();
     let reply = shell
         .call_method("Screenshot", &(true, false, filename))
-        .map_err(|e| format!("GNOME Shell Screenshot failed: {}", e))?;
-    let (ok, _used): (bool, String) = reply
+        .map_err(|e| format!("GNOME Shell Screenshot: {}", e))?;
+    let (ok, _): (bool, String) = reply
         .body()
         .deserialize()
         .map_err(|e| format!("Bad Screenshot reply: {}", e))?;
@@ -630,7 +791,7 @@ fn gnome_shell_fullscreen(path: &Path) -> Result<(), String> {
 fn gnome_shell_window(path: &Path) -> Result<(), String> {
     use zbus::blocking::{Connection, Proxy};
 
-    let conn = Connection::session().map_err(|e| format!("D-Bus session unavailable: {}", e))?;
+    let conn = Connection::session().map_err(|e| format!("D-Bus unavailable: {}", e))?;
     let shell = Proxy::new(
         &conn,
         "org.gnome.Shell",
@@ -642,8 +803,8 @@ fn gnome_shell_window(path: &Path) -> Result<(), String> {
     let filename = path.to_string_lossy().to_string();
     let reply = shell
         .call_method("ScreenshotWindow", &(true, true, false, filename))
-        .map_err(|e| format!("GNOME Shell ScreenshotWindow failed: {}", e))?;
-    let (ok, _used): (bool, String) = reply
+        .map_err(|e| format!("GNOME Shell ScreenshotWindow: {}", e))?;
+    let (ok, _): (bool, String) = reply
         .body()
         .deserialize()
         .map_err(|e| format!("Bad ScreenshotWindow reply: {}", e))?;
@@ -654,6 +815,7 @@ fn gnome_shell_window(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+// ── Non-Linux stubs ────────────────────────────────────────────────────────
 #[cfg(not(target_os = "linux"))]
 fn portal_fullscreen(_path: &Path) -> Result<(), String> {
     Err("portal capture is Linux-only".to_string())
@@ -672,4 +834,24 @@ fn gnome_shell_fullscreen(_path: &Path) -> Result<(), String> {
 #[cfg(not(target_os = "linux"))]
 fn gnome_shell_window(_path: &Path) -> Result<(), String> {
     Err("GNOME Shell capture is Linux-only".to_string())
+}
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+
+/// Copy the most recently modified PNG in `dir` to `dest`.
+/// Used as a fallback when a tool doesn't print its output path.
+fn find_newest_png(dir: &str, dest: &Path) -> Result<(), String> {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        let mut files: Vec<_> = entries
+            .flatten()
+            .filter(|e| e.path().extension().map(|x| x == "png").unwrap_or(false))
+            .collect();
+        files.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
+        if let Some(last) = files.last() {
+            return std::fs::copy(last.path(), dest)
+                .map(|_| ())
+                .map_err(|e| format!("Failed to copy screenshot: {}", e));
+        }
+    }
+    Err("No PNG found in output directory".to_string())
 }
