@@ -229,7 +229,10 @@ jobs:
           # Prevent linuxdeploy's bundled strip 2.35 from corrupting modern
           # Arch/CachyOS ELF binaries that contain .relr.dyn RELR relocations.
           NO_STRIP: "1"
-        run: cargo tauri build --locked --bundles appimage
+        # Use pnpm tauri build (matches the matrix build) — the runner doesn't
+        # have cargo-tauri installed, so `cargo tauri build` fails with
+        # `error: no such command: \`tauri\``.
+        run: pnpm exec tauri build --locked --bundles appimage
 
       - name: Patch AppImage runtime (fuse2 + fuse3 + extract fallback)
         shell: bash
