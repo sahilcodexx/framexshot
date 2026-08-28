@@ -256,20 +256,10 @@ jobs:
           # The AppImage format is:  [ runtime binary ][ squashfs filesystem ]
           # Squashfs magic on little-endian x86: 'hsqs' = 0x68 0x73 0x71 0x73
           # We find this offset, slice off the runtime, and prepend the new one.
-          # (YAML literal-block rules mean we can't use a heredoc inside `run: |`
-          # — `<<` would be parsed as a merge key — so we write the script to a
-          # temp file first and run it from there.)
-          cat > /tmp/find-squashfs.py << 'PYEOF'
-import sys
-with open(sys.argv[1], 'rb') as f:
-    data = f.read(8 * 1024 * 1024)   # scan first 8 MB
-offset = data.find(b'hsqs')
-if offset <= 0:
-    print(-1)
-else:
-    print(offset)
-PYEOF
-          SQ_OFFSET=$(python3 /tmp/find-squashfs.py "$APPIMAGE")
+          # We can't use a heredoc inside the YAML literal block (the leading `<<`
+          # is parsed as a YAML merge key by the action's parser), so we run the
+          # Python lookup as a one-liner with -c.
+          SQ_OFFSET=$(python3 -c 'import sys; d=open(sys.argv[1],"rb").read(8*1024*1024); o=d.find(b"hsqs"); print(-1 if o<=0 else o)' "$APPIMAGE")
 
           if [ "$SQ_OFFSET" -le 0 ]; then
             echo "ERROR: squashfs magic 'hsqs' not found in AppImage"
