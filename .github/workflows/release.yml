@@ -232,7 +232,9 @@ jobs:
         # Use pnpm tauri build (matches the matrix build) — the runner doesn't
         # have cargo-tauri installed, so `cargo tauri build` fails with
         # `error: no such command: \`tauri\``.
-        run: pnpm exec tauri build --locked --bundles appimage
+        # `--locked` is a `cargo build` flag and not a `tauri build` option, so
+        # it must not be passed through to the JS Tauri CLI.
+        run: pnpm exec tauri build --bundles appimage
 
       - name: Patch AppImage runtime (fuse2 + fuse3 + extract fallback)
         shell: bash
