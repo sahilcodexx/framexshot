@@ -638,7 +638,22 @@ fn portal_screenshot_call(path: &Path, interactive: bool) -> Result<(), PortalEr
     // parent_window = "" is valid; it means "no parent window / take focus".
     let reply = portal
         .call_method("Screenshot", &("", &options))
-        .map_err(|e| PortalError::Other(format!("Portal Screenshot call failed: {}", e)))?;
+        .map_err(|e| {
+            // xdg-desktop-portal-hyprland (xdph) returns a D-Bus *error reply*
+            // (not a Response signal with code 2) when a sandboxed Flatpak app
+            // calls Screenshot with interactive=false.  The error name is
+            // org.freedesktop.portal.Error.NotAllowed and the message contains
+            // "not available inside the sandbox".
+            //
+            // Without this check the error is mapped to PortalError::Other and
+            // we return immediately — the interactive=true retry never happens.
+            // Map it to NotAllowed so the caller falls through to the retry.
+            if e.to_string().contains("NotAllowed") {
+                PortalError::NotAllowed
+            } else {
+                PortalError::Other(format!("Portal Screenshot call failed: {}", e))
+            }
+        })?;
 
     let request_path: OwnedObjectPath = reply
         .body()

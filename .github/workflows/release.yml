@@ -177,6 +177,139 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
+  # ── AppImage: build + patch runtime for fuse2/fuse3/no-FUSE compatibility ─────────
+  # The standard Tauri AppImage runtime requires libfuse2. Modern Arch/CachyOS
+  # ships libfuse3 only, so double-clicking the unpatched AppImage fails.
+  # Fix: after building, locate the squashfs payload (magic bytes 'hsqs'), then
+  # prepend the AppImage/type2-runtime binary which supports fuse2, fuse3, AND
+  # an extract-and-run fallback when FUSE is completely unavailable.
+  # This job is best-effort — failure does not block the deb/rpm/dmg release.
+  appimage:
+    needs: build
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf libxdo-dev \
+            libpipewire-0.3-dev libgbm-dev libdrm-dev \
+            squashfs-tools file
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build AppImage
+        env:
+          # Prevent linuxdeploy's bundled strip 2.35 from corrupting modern
+          # Arch/CachyOS ELF binaries that contain .relr.dyn RELR relocations.
+          NO_STRIP: "1"
+        run: cargo tauri build --locked --bundles appimage
+
+      - name: Patch AppImage runtime (fuse2 + fuse3 + extract fallback)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APPIMAGE=$(find src-tauri/target/release/bundle/appimage \
+            -name "*.AppImage" 2>/dev/null | head -1)
+          if [ -z "$APPIMAGE" ]; then
+            echo "ERROR: No AppImage produced by the build step"
+            exit 1
+          fi
+          echo "Found AppImage: $APPIMAGE ($(stat -c%s "$APPIMAGE") bytes)"
+
+          # Download the type2-runtime which supports:
+          #   libfuse2   — original AppImages
+          #   libfuse3   — modern Arch / CachyOS
+          #   extract    — APPIMAGE_EXTRACT_AND_RUN=1 fallback (no FUSE at all)
+          RUNTIME_URL="https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64"
+          curl -fsSL "$RUNTIME_URL" -o /tmp/runtime-new
+          chmod +x /tmp/runtime-new
+          echo "Downloaded new runtime: $(stat -c%s /tmp/runtime-new) bytes"
+
+          # The AppImage format is:  [ runtime binary ][ squashfs filesystem ]
+          # Squashfs magic on little-endian x86: 'hsqs' = 0x68 0x73 0x71 0x73
+          # We find this offset, slice off the runtime, and prepend the new one.
+          SQ_OFFSET=$(python3 - "$APPIMAGE" <<'PYEOF'
+import sys
+with open(sys.argv[1], 'rb') as f:
+    data = f.read(8 * 1024 * 1024)   # scan first 8 MB
+offset = data.find(b'hsqs')
+if offset <= 0:
+    print(-1)
+else:
+    print(offset)
+PYEOF
+          )
+
+          if [ "$SQ_OFFSET" -le 0 ]; then
+            echo "ERROR: squashfs magic 'hsqs' not found in AppImage"
+            exit 1
+          fi
+          echo "Squashfs starts at byte offset: $SQ_OFFSET"
+
+          # Rebuild: new runtime binary + original squashfs payload.
+          # 'tail -c +N' starts reading at the Nth byte (1-indexed),
+          # so +((SQ_OFFSET+1)) skips the old runtime exactly.
+          PATCHED=/tmp/framexshot-patched.AppImage
+          {
+            cat /tmp/runtime-new
+            tail -c "+$((SQ_OFFSET + 1))" "$APPIMAGE"
+          } > "$PATCHED"
+          chmod +x "$PATCHED"
+
+          ORIG_SIZE=$(stat -c%s "$APPIMAGE")
+          PATCH_SIZE=$(stat -c%s "$PATCHED")
+          echo "Original size: $ORIG_SIZE  Patched size:  $PATCH_SIZE"
+
+          # Sanity check: sizes should be close (only the runtime changed)
+          DELTA=$(( PATCH_SIZE - ORIG_SIZE ))
+          ABSDELTA=${DELTA#-}
+          if [ "$ABSDELTA" -gt $((2 * 1024 * 1024)) ]; then
+            echo "ERROR: size delta ${DELTA} bytes is suspiciously large; aborting"
+            exit 1
+          fi
+
+          cp "$PATCHED" "$APPIMAGE"
+          echo "Runtime patched successfully: $APPIMAGE"
+
+      - name: Resolve app version
+        run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Upload AppImage to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APPIMAGE=$(find src-tauri/target/release/bundle/appimage \
+            -name "*.AppImage" 2>/dev/null | head -1)
+          gh release upload "${{ github.ref_name }}" "$APPIMAGE" --clobber
+
   # ── Build Flatpak bundle (universal Linux — bundles WebKitGTK via GNOME runtime) ──
   # Decoupled from publish: failure here will not block the AppImage/deb/rpm/dmg
   # release. Flatpak gets uploaded as a separate best-effort artifact.
