@@ -236,7 +236,7 @@ jobs:
         # it must not be passed through to the JS Tauri CLI.
         run: pnpm exec tauri build --bundles appimage
 
-      - name: Verify AppImage
+      - name: Verify & patch AppImage
         shell: bash
         run: |
           set -euo pipefail
@@ -248,17 +248,48 @@ jobs:
           fi
           echo "Found AppImage: $APPIMAGE ($(stat -c%s "$APPIMAGE") bytes)"
           file "$APPIMAGE"
-          echo "AppImage verified; uploading as-is (no runtime patch — see note below)."
-          # NOTE: an earlier version of this step tried to "patch" the AppImage
-          # by slicing off linuxdeploy's bundled runtime and prepending the
-          # newer AppImage type2-runtime (fuse2 + fuse3 + extract-mode). That
-          # patch was wrong: the squashfs is not at a fixed offset, finding
-          # it requires parsing the 96-byte superblock, and the resulting
-          # artifact was always corrupt (verified: zero valid SquashFS 4.x
-          # superblocks in the v1.0.5 AppImage). The AppImage that linuxdeploy
-          # produces on ubuntu-24.04 is a working Type 1 AppImage as-is. Users
-          # on distros without libfuse2 (e.g. CachyOS) can install fuse2 from
-          # AUR or set APPIMAGE_EXTRACT_AND_RUN=1.
+
+          # Patch the AppImage in place: strip the unconditional
+          #   export GDK_BACKEND=x11
+          # that linuxdeploy-plugin-gtk injects into apprun-hooks/. On Hyprland
+          # and other pure-Wayland setups XWayland does not expose a working
+          # EGL display, so the X11 backend fails with EGL_BAD_PARAMETER and
+          # the app silently aborts ("Could not create default EGL display").
+          # Letting GDK auto-detect (which on Wayland picks wayland) fixes it.
+          # The line was added as a workaround for tauri-apps/tauri#8541;
+          # Tauri v2 no longer needs it.
+          EXTRACT_DIR=$(mktemp -d)
+          "$APPIMAGE" --appimage-extract >/dev/null 2>&1
+          if [ -f squashfs-root/apprun-hooks/linuxdeploy-plugin-gtk.sh ]; then
+            sed -i '/^export GDK_BACKEND=x11 *#/d' squashfs-root/apprun-hooks/linuxdeploy-plugin-gtk.sh
+            sed -i '/^export GDK_BACKEND=x11$/d'     squashfs-root/apprun-hooks/linuxdeploy-plugin-gtk.sh
+            echo "Patched AppRun hook: GDK_BACKEND=x11 removed (was forcing broken X11 backend)."
+            grep -n GDK_BACKEND squashfs-root/apprun-hooks/linuxdeploy-plugin-gtk.sh || echo "  (no GDK_BACKEND lines left — good)"
+          else
+            echo "WARN: linuxdeploy-plugin-gtk.sh not found, skipping patch"
+          fi
+
+          # Repackage the modified squashfs-root into the AppImage.
+          # The AppImage is ELF + squashfs; we re-pack using the original
+          # squashfs-tools via the AppImage's own runtime in extract mode.
+          # The simplest reliable method: use the type2-runtime to create a
+          # new AppImage from the modified AppDir.
+          if command -v appimagetool >/dev/null 2>&1; then
+            appimagetool squashfs-root "$APPIMAGE" 2>&1 | tail -5
+          else
+            # appimagetool is part of the AppImage build; if not on PATH,
+            # we still need to repack. Use mksquashfs if available.
+            if command -v mksquashfs >/dev/null 2>&1; then
+              mksquashfs squashfs-root "${APPIMAGE}.new" -noappend -all-root -quiet
+              mv "${APPIMAGE}.new" "$APPIMAGE"
+            else
+              echo "ERROR: cannot repack — install appimagetool or mksquashfs"
+              exit 1
+            fi
+          fi
+          rm -rf squashfs-root "$EXTRACT_DIR"
+          echo "Patched AppImage: $(stat -c%s "$APPIMAGE") bytes"
+          file "$APPIMAGE"
 
       - name: Resolve app version
         run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
