@@ -187,9 +187,18 @@ pub fn capture_fullscreen(path: &Path) -> Result<(), String> {
         }
         // Universal: xdg-desktop-portal (works on every desktop, incl. Flatpak)
         // This is the last Wayland resort — grim should already have succeeded.
+        //
+        // SKIP inside a Flatpak: flatpak-spawn --host always reaches the user's
+        // grim/slurp (verified end-to-end). The portal is unreliable on some
+        // backends (xdg-desktop-portal-hyprland returns NotAllowed for
+        // non-interactive calls) and adds nothing the host tools don't already
+        // give us. Outside a Flatpak the portal remains a useful fallback for
+        // systems that don't have grim/slurp installed.
         #[cfg(target_os = "linux")]
-        if portal_fullscreen(path).is_ok() {
-            return Ok(());
+        if !is_flatpak() {
+            if portal_fullscreen(path).is_ok() {
+                return Ok(());
+            }
         }
         if has_binary("gnome-screenshot") && gnome_screenshot(path, &[]).is_ok() {
             return Ok(());
@@ -217,9 +226,12 @@ pub fn capture_fullscreen(path: &Path) -> Result<(), String> {
             return Ok(());
         }
     }
+    // Skip the portal inside a flatpak — see comment in capture_fullscreen().
     #[cfg(target_os = "linux")]
-    if portal_fullscreen(path).is_ok() {
-        return Ok(());
+    if !is_flatpak() {
+        if portal_fullscreen(path).is_ok() {
+            return Ok(());
+        }
     }
     if has_binary("gnome-screenshot") && gnome_screenshot(path, &[]).is_ok() {
         return Ok(());
