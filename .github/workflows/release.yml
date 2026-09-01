@@ -20,15 +20,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux: .deb / .rpm only. AppImage is NOT built in CI — see
-          # AGENTS.md "Known Issue #5". Every attempt to ship an AppImage
-          # has broken in some new way (FUSE namespace WebKit crash, unsquashfs
-          # superblock detection failing on the runner, tauri-action overwriting
-          # the post-build conversion, etc). The .deb / .rpm / AUR paths don't
-          # hit any of those because they install through the distro's package
-          # manager. If you want an AppImage for a one-off, run
-          #   cargo tauri build --bundles appimage
-          # in the source tree and accept the FUSE issues for now.
+          # Linux: .deb / .rpm in the matrix job; AppImage is built separately in the
+          # `appimage` job (best-effort) with post-build stripping of bundled
+          # Wayland/GL libs so rolling distros use their system copies.
           - platform: ubuntu-24.04
             args: --bundles deb,rpm
             arch: linux-x86_64
@@ -128,7 +122,7 @@ jobs:
 
             | Platform | Package | Notes |
             |----------|---------|-------|
-            | **Linux (x86_64)** | `.deb`, `.rpm` | distro-native install |
+            | **Linux (x86_64)** | `.deb`, `.rpm`, `.AppImage` | AppImage for universal use; deb/rpm for distro-native install |
             | **Linux (arm64)** | `.deb`, `.rpm` | Raspberry Pi / Asahi / etc. |
             | **Windows** | `*_x64-setup.exe` | standard installer |
             | **macOS (Intel)** | `*_x64.dmg` | macOS 10.15+ |
@@ -149,6 +143,12 @@ jobs:
             **Arch / Manjaro / EndeavourOS (AUR — recommended):**
             ```sh
             yay -S framexshot
+            ```
+
+            **Any other distro (AppImage — no install needed):**
+            ```sh
+            chmod +x framexshot_${{ env.APP_VERSION }}_amd64.AppImage
+            ./framexshot_${{ env.APP_VERSION }}_amd64.AppImage
             ```
 
             **Any other distro (builds from source against your system libs):**
@@ -177,12 +177,12 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-  # ── AppImage: build + patch runtime for fuse2/fuse3/no-FUSE compatibility ─────────
-  # The standard Tauri AppImage runtime requires libfuse2. Modern Arch/CachyOS
-  # ships libfuse3 only, so double-clicking the unpatched AppImage fails.
-  # Fix: after building, locate the squashfs payload (magic bytes 'hsqs'), then
-  # prepend the AppImage/type2-runtime binary which supports fuse2, fuse3, AND
-  # an extract-and-run fallback when FUSE is completely unavailable.
+  # ── AppImage: build + strip version-coupled Wayland/GL libs for rolling distros ──
+  # linuxdeploy-plugin-gtk copies Ubuntu 24.04's libwayland 1.21 into the AppImage.
+  # On rolling distros (Arch/CachyOS) system Mesa 25.x expects libwayland 1.26+;
+  # the mismatch makes EGL succeed silently but wl_buffer never displays → blank
+  # window. Fix: delete those bundled .so files so the dynamic linker uses the
+  # system's copies, then repack squashfs while preserving the ELF runtime prefix.
   # This job is best-effort — failure does not block the deb/rpm/dmg release.
   appimage:
     needs: build
@@ -236,7 +236,7 @@ jobs:
         # it must not be passed through to the JS Tauri CLI.
         run: pnpm exec tauri build --bundles appimage
 
-      - name: Verify AppImage
+      - name: Patch AppImage (strip bundled Wayland/GL libs)
         shell: bash
         run: |
           set -euo pipefail
@@ -248,10 +248,72 @@ jobs:
           fi
           echo "Found AppImage: $APPIMAGE ($(stat -c%s "$APPIMAGE") bytes)"
           file "$APPIMAGE"
-          echo "AppImage verified; uploading as-is."
-          # NOTE: the GDK_BACKEND=x11 problem on Hyprland is fixed in the app
-          # itself (src-tauri/src/main.rs overrides it to wayland when
-          # WAYLAND_DISPLAY is set). No AppImage post-processing needed.
+
+          # Squashfs offset from the embedded type-2 runtime (avoids false-positive
+          # 'hsqs' matches inside the ELF .data section).
+          OFFSET=$("$APPIMAGE" --appimage-offset)
+          if [ -z "$OFFSET" ] || [ "$OFFSET" -le 0 ] 2>/dev/null; then
+            echo "ERROR: --appimage-offset returned invalid value: '$OFFSET'"
+            exit 1
+          fi
+          echo "Squashfs offset: $OFFSET bytes"
+
+          WORKDIR=$(mktemp -d)
+          cleanup() { rm -rf "$WORKDIR" squashfs-root; }
+          trap cleanup EXIT
+
+          # Extract root filesystem
+          "$APPIMAGE" --appimage-extract >/dev/null
+
+          # Read compression settings from the original squashfs payload so the
+          # repacked image matches what linuxdeploy produced.
+          dd if="$APPIMAGE" of="$WORKDIR/orig.sqfs" bs="$OFFSET" skip=1 status=none
+          SQFS_INFO=$(unsquashfs -s "$WORKDIR/orig.sqfs" 2>&1)
+          echo "$SQFS_INFO"
+          BLOCK_SIZE=$(echo "$SQFS_INFO" | sed -n 's/^Block size \([0-9]*\)$/\1/p')
+          COMP=$(echo "$SQFS_INFO" | sed -n 's/^Compression used \([a-z0-9_]*\)$/\1/p')
+          BLOCK_SIZE=${BLOCK_SIZE:-131072}
+          COMP=${COMP:-xz}
+          COMP_ARGS=(-comp "$COMP")
+          case "$COMP" in
+            xz)   COMP_ARGS+=(-Xdict-size 100%) ;;
+            zstd) COMP_ARGS+=(-Xcompression-level 15) ;;
+          esac
+
+          # Delete version-coupled graphics/Wayland libs — rolling distros must
+          # use their own (newer) system copies. Stable ABI; always present.
+          STRIP_LIBS=(
+            libwayland-client.so.0
+            libwayland-server.so.0
+            libwayland-cursor.so.0
+            libwayland-egl.so.1
+            libgbm.so.1
+            libEGL.so.1
+            libGL.so.1
+            libGLX.so.0
+            libGLdispatch.so.0
+            libdrm.so.2
+          )
+          for lib in "${STRIP_LIBS[@]}"; do
+            while IFS= read -r -d '' path; do
+              echo "  removing $path"
+              rm -f "$path"
+            done < <(find squashfs-root \( -name "$lib" -o -name "${lib}."* \) -print0)
+          done
+
+          mksquashfs squashfs-root "$WORKDIR/new.sqfs" \
+            -noappend -root-owned -b "$BLOCK_SIZE" "${COMP_ARGS[@]}" -quiet
+
+          # Reassemble: [original ELF runtime prefix][new squashfs payload]
+          dd if="$APPIMAGE" of="${APPIMAGE}.patched" bs="$OFFSET" count=1 status=none
+          cat "$WORKDIR/new.sqfs" >> "${APPIMAGE}.patched"
+          chmod +x "${APPIMAGE}.patched"
+          mv "${APPIMAGE}.patched" "$APPIMAGE"
+
+          echo "Patched AppImage: $(stat -c%s "$APPIMAGE") bytes"
+          file "$APPIMAGE"
+          "$APPIMAGE" --appimage-offset >/dev/null
+          echo "AppImage patch complete."
 
       - name: Resolve app version
         run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
