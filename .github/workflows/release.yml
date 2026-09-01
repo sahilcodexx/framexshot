@@ -20,9 +20,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux: .deb / .rpm in the matrix job; AppImage is built separately in the
-          # `appimage` job (best-effort) with post-build stripping of bundled
-          # Wayland/GL libs so rolling distros use their system copies.
+          # Linux: .deb / .rpm in the matrix job. Flatpak is built in a separate
+          # `flatpak` job (best-effort) and uploaded when ready. AppImage was
+          # dropped because the bundled linuxdeploy strip (binutils 2.35) cannot
+          # process CachyOS / Arch libraries that contain .relr.dyn sections.
           - platform: ubuntu-24.04
             args: --bundles deb,rpm
             arch: linux-x86_64
@@ -122,13 +123,19 @@ jobs:
 
             | Platform | Package | Notes |
             |----------|---------|-------|
-            | **Linux (x86_64)** | `.deb`, `.rpm`, `.AppImage` | AppImage for universal use; deb/rpm for distro-native install |
+            | **Linux (x86_64)** | `.deb`, `.rpm`, `.flatpak` | Flatpak is the universal install (works on every distro, ships its own libwayland/Mesa/WebKit2GTK runtime) |
             | **Linux (arm64)** | `.deb`, `.rpm` | Raspberry Pi / Asahi / etc. |
             | **Windows** | `*_x64-setup.exe` | standard installer |
             | **macOS (Intel)** | `*_x64.dmg` | macOS 10.15+ |
             | **macOS (Apple Silicon)** | `*_aarch64.dmg` | macOS 10.15+ |
 
             ### Linux — pick what fits your distro
+
+            **Flatpak (recommended — every distro, CachyOS / Arch / Fedora / Ubuntu / openSUSE / Mint / Pop!_OS):**
+            ```sh
+            flatpak install --user ./framexshot_${{ env.APP_VERSION }}_amd64.flatpak
+            ```
+            Self-contained sandbox; ships its own libwayland, Mesa, and WebKit2GTK so it works identically on rolling distros where native packages lag.
 
             **Debian / Ubuntu / Pop!_OS / Mint / Elementary:**
             ```sh
@@ -145,13 +152,7 @@ jobs:
             yay -S framexshot
             ```
 
-            **Any other distro (AppImage — no install needed):**
-            ```sh
-            chmod +x framexshot_${{ env.APP_VERSION }}_amd64.AppImage
-            ./framexshot_${{ env.APP_VERSION }}_amd64.AppImage
-            ```
-
-            **Any other distro (builds from source against your system libs):**
+            **Build from source (against your system libs):**
             ```sh
             curl -fsSL https://raw.githubusercontent.com/sahilcodexx/framexshot/main/packaging/install.sh | sh
             ```
@@ -170,6 +171,8 @@ jobs:
             ```sh
             open framexshot_${{ env.APP_VERSION }}_x64.dmg
             ```
+
+            > **Note:** AppImage builds were dropped starting v1.0.6. The Tauri-bundled `linuxdeploy` ships `strip` (binutils 2.35) which cannot process CachyOS / Arch libraries containing `.relr.dyn` RELR relocations, and rolling distros ship a different libwayland/libgbm than the AppImage bundles. Flatpak sidesteps both problems by pinning a stable runtime.
 
             ## What's New
             ${{ steps.release_notes.outputs.notes }}
