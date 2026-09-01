@@ -66,13 +66,12 @@ ENV PATH=/usr/local/cargo/bin:$PATH
 
 WORKDIR /src
 
-# Pre-cache deps so the build is fast on rebuilds
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml* ./
-COPY src ./src
-COPY src-tauri/Cargo.toml src-tauri/Cargo.lock ./src-tauri/
-COPY src-tauri/tauri.conf.json ./src-tauri/
+# Pre-cache deps so the build is fast on rebuilds.
+# The warmup step creates a stub main.rs AND lib.rs because the real
+# Cargo.toml has [lib] name = "framexshot_lib" which expects src/lib.rs.
 RUN cd src-tauri && mkdir -p src bin && \
     echo 'fn main() { println!("warmup"); }' > src/main.rs && \
+    echo '// warmup stub; replaced by the real build step below' > src/lib.rs && \
     cargo fetch
 
 # Build the AppImage
