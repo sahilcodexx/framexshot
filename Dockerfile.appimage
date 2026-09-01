@@ -54,6 +54,16 @@ RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
     && rm -rf /var/lib/apt/lists/* \
     && npm i -g pnpm@${PNPM_VERSION}
 
+# Rust stable (matches the CI matrix: dtolnay/rust-toolchain@stable)
+# Install via rustup so the toolchain matches the GitHub Actions runners
+# (Rust 1.x stable, channel default).
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV CARGO_HOME=/usr/local/cargo
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain stable --profile minimal --no-modify-path \
+    && chmod -R a+rX /usr/local/rustup /usr/local/cargo
+ENV PATH=/usr/local/cargo/bin:$PATH
+
 WORKDIR /src
 
 # Pre-cache deps so the build is fast on rebuilds
