@@ -1,6 +1,6 @@
 [package]
 name = "framexshot"
-version = "1.0.5"
+version = "1.0.6"
 description = "FrameXShot — Linux screenshot tool"
 authors = ["kartik labhshetwar"]
 edition = "2021"

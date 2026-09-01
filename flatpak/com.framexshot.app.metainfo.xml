@@ -39,6 +39,11 @@
     <keyword>ocr</keyword>
   </keywords>
   <releases>
+    <release version="1.0.6" date="2026-09-01">
+      <description>
+        <p>Capture fix on Wayland: skip xdg-desktop-portal calls inside the Flatpak sandbox and route all host tools (grim, slurp, hyprctl, spectacle) through flatpak-spawn. Fixes the GDBus "NotAllowed" error on Hyprland and other wlroots compositors. Also drops the AppImage job from CI (the bundled strip toolchain was incompatible with rolling distros) and bumps the frontend to pnpm 11.</p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-08-09"/>
   </releases>
   <content_rating type="oars-1.1"/>
