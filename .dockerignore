@@ -1,0 +1,46 @@
+# FrameXShot — Docker build context exclusions
+#
+# Without this, every `docker build` copies the entire repo (including
+# node_modules (~200 MB), src-tauri/target (~4 GB after a release build),
+# dist/ (~30 MB), and .git (~50 MB)) into the container. The COPY step
+# alone takes minutes. With this file, only the source is copied and
+# node_modules/target/dist are built inside the container (and cached
+# by Docker's layer system).
+
+# Node / pnpm
+node_modules/
+.pnpm-store/
+
+# Rust / Cargo
+src-tauri/target/
+src-tauri/Cargo.lock
+**/*.rs.bk
+
+# Tauri
+src-tauri/bin/
+src-tauri/gen/
+
+# Vite / frontend
+dist/
+
+# Git
+.git/
+.gitignore
+
+# Editor / OS junk
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.log
+*.tmp
+.cache/
+
+# This file itself
+.dockerignore
+Dockerfile.appimage
+docker-compose.appimage.yml
