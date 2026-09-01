@@ -8,9 +8,9 @@
 
 use serde::Serialize;
 use std::path::PathBuf;
-use std::process::Command;
 use xcap::Monitor;
 
+use crate::capture::host_command;
 use crate::utils::{ensure_dir, generate_filename, generate_filename_with_id, AppResult};
 
 /// Check if we're on Wayland
@@ -98,7 +98,7 @@ fn capture_all_monitors_wayland(save_path: &PathBuf) -> AppResult<Vec<MonitorSho
         let path = save_path.join(&filename);
         let path_str = path.to_string_lossy().to_string();
 
-        let status = Command::new("grim")
+        let status = host_command("grim")
             .arg(&path_str)
             .status()
             .map_err(|e| format!("grim failed: {}", e))?;
@@ -124,7 +124,7 @@ fn capture_all_monitors_wayland(save_path: &PathBuf) -> AppResult<Vec<MonitorSho
         let path = save_path.join(&filename);
         let path_str = path.to_string_lossy().to_string();
 
-        let status = Command::new("grim")
+        let status = host_command("grim")
             .arg("-o")
             .arg(output_name)
             .arg(&path_str)
@@ -173,7 +173,7 @@ fn capture_all_monitors_wayland(save_path: &PathBuf) -> AppResult<Vec<MonitorSho
 fn get_wayland_outputs() -> Vec<String> {
     // Try wlr-randr
     if has_binary("wlr-randr") {
-        if let Ok(out) = Command::new("wlr-randr").output() {
+        if let Ok(out) = host_command("wlr-randr").output() {
             let text = String::from_utf8_lossy(&out.stdout);
             let names: Vec<String> = text
                 .lines()
@@ -189,7 +189,7 @@ fn get_wayland_outputs() -> Vec<String> {
 
     // Try swaymsg -t get_outputs
     if has_binary("swaymsg") {
-        if let Ok(out) = Command::new("swaymsg").args(["-t", "get_outputs"]).output() {
+        if let Ok(out) = host_command("swaymsg").args(["-t", "get_outputs"]).output() {
             let text = String::from_utf8_lossy(&out.stdout);
             // parse "name" fields from JSON
             let names: Vec<String> = text
@@ -213,7 +213,7 @@ fn get_wayland_outputs() -> Vec<String> {
 
     // Try hyprctl monitors
     if has_binary("hyprctl") {
-        if let Ok(out) = Command::new("hyprctl").args(["monitors", "-j"]).output() {
+        if let Ok(out) = host_command("hyprctl").args(["monitors", "-j"]).output() {
             let text = String::from_utf8_lossy(&out.stdout);
             let names: Vec<String> = text
                 .split('"')
