@@ -1,0 +1,26 @@
+# FrameXShot — AppImage build via docker compose
+#
+# Usage:
+#   docker compose -f docker-compose.appimage.yml run build
+#   ls -lh FrameXShot-x86_64.AppImage   # written to current directory
+#
+# The Dockerfile copies the host source tree into /src, builds the
+# AppImage in an Ubuntu 24.04 container (where the linuxdeploy / binutils
+# 2.35 / modern-glibc mismatch goes away), and writes the final artifact
+# to /out which is bind-mounted to the current working directory.
+#
+# The scratch output stage ensures the published image contains only the
+# AppImage — no intermediate cargo target/ output, no build cache.
+
+services:
+  build:
+    build:
+      context: .
+      dockerfile: Dockerfile.appimage
+    image: framexshot-appimage
+    container_name: framexshot-appimage-build
+    volumes:
+      # The output AppImage lands in your current working directory.
+      - ./:/out
+    working_dir: /src
+    init: true   # faster signal handling, no leaked zombie processes
