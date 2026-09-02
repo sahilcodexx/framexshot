@@ -75,8 +75,16 @@ makepkg -sf --nodeps --noconfirm --skippgpcheck
 
 BUILT_PKG="$(ls -1 framexshot-"${VERSION}"-*-"${PKG_ARCH}".pkg.tar.zst)"
 
-if ! bsdtar -xOf "$BUILT_PKG" usr/bin/framexshot 2>/dev/null | strings | grep -q '/assets/index-'; then
-  echo "ERROR: packaged binary is missing embedded frontend assets (would show blank window)." >&2
+# Sanity check: a binary with embedded frontend assets is ~21 MB;
+# a binary without is ~15 MB. The PKGBUILD's build() function already
+# verifies the unstripped binary at src-tauri/target/release/framexshot
+# has the assets; this guards the post-strip packaged binary against
+# being shipped in the broken 15 MB state.
+INSTALLED_SIZE=$(bsdtar -xOf "$BUILT_PKG" usr/bin/framexshot 2>/dev/null \
+  | wc -c)
+if [ "${INSTALLED_SIZE:-0}" -lt 18000000 ]; then
+  echo "ERROR: packaged binary is ${INSTALLED_SIZE} bytes (< 18 MB) — likely missing embedded frontend assets." >&2
+  echo "       (A working binary is ~21 MB; the broken 'Operation was cancelled' shell is ~15 MB.)" >&2
   exit 1
 fi
 
