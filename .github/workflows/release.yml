@@ -346,14 +346,44 @@ jobs:
       - name: Validate Arch package
         run: test -f "framexshot_${{ env.APP_VERSION }}_x86_64.pkg.tar.zst"
 
+      - name: Sign Arch package with maintainer GPG key
+        if: ${{ env.GPG_PRIVATE_KEY }}
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          # Import the maintainer key (armored, including BEGIN/END lines).
+          # GitHub Actions secrets preserve the full string including newlines.
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          KEY_ID=$(gpg --list-secret-keys --keyid-format=long | \
+            grep -E '^sec' | head -1 | awk '{print $2}' | cut -d/ -f2)
+          if [ -z "$KEY_ID" ]; then
+            echo "ERROR: failed to extract key ID after import" >&2
+            gpg --list-secret-keys >&2
+            exit 1
+          fi
+          echo "Signing with key ID: $KEY_ID"
+          # gpg-agent passphrase via loopback pinentry.
+          echo "$GPG_PASSPHRASE" | gpg --batch --pinentry-mode loopback \
+            --passphrase-fd 0 --yes --detach-sign \
+            --output "framexshot_${{ env.APP_VERSION }}_x86_64.pkg.tar.zst.sig" \
+            "framexshot_${{ env.APP_VERSION }}_x86_64.pkg.tar.zst"
+          test -f "framexshot_${{ env.APP_VERSION }}_x86_64.pkg.tar.zst.sig" \
+            || { echo "ERROR: .sig file was not created" >&2; exit 1; }
+
       - name: Upload Arch package to release (best-effort)
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          ASSETS="framexshot_${{ env.APP_VERSION }}_x86_64.pkg.tar.zst"
+          if [ -f "framexshot_${{ env.APP_VERSION }}_x86_64.pkg.tar.zst.sig" ]; then
+            ASSETS="$ASSETS framexshot_${{ env.APP_VERSION }}_x86_64.pkg.tar.zst.sig"
+          fi
           gh release upload "${{ github.ref_name }}" \
             --repo "${{ github.repository }}" \
-            "framexshot_${{ env.APP_VERSION }}_x86_64.pkg.tar.zst" \
+            $ASSETS \
             --clobber || echo "Arch package upload failed; release was still published."
 
   # ── Publish draft → public release ───────────────────────────────────────
