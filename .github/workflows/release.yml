@@ -331,7 +331,8 @@ jobs:
             webkit2gtk-4.1 gtk3 libsoup3 libappindicator-gtk3 tesseract \
             grim slurp wl-clipboard xclip xsel xdg-desktop-portal \
             zenity kdialog xdotool openssl librsvg appmenu-gtk-module \
-            hyprshot xdg-desktop-portal-hyprland github-cli
+            hyprshot xdg-desktop-portal-hyprland github-cli \
+            clang libclang pkgconf
 
       - name: Resolve app version
         run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
