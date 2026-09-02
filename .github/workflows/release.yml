@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Native packages: Linux (AppImage + .deb + .rpm, x86_64 + arm64), Windows (NSIS), macOS (DMG) ──
+  # ── Native packages: Linux (.deb + .rpm, x86_64 + arm64), Windows (NSIS), macOS (DMG) ──
   build:
     strategy:
       fail-fast: false
@@ -123,7 +123,7 @@ jobs:
 
             | Platform | Package | Notes |
             |----------|---------|-------|
-            | **Linux (x86_64)** | `.deb`, `.rpm`, `.flatpak` | Flatpak is the universal install (works on every distro, ships its own libwayland/Mesa/WebKit2GTK runtime) |
+            | **Linux (x86_64)** | `.deb`, `.rpm`, `.pkg.tar.zst`, `.flatpak` | Native Arch package recommended on CachyOS/Arch/Hyprland (grim+slurp, no portal sandbox) |
             | **Linux (arm64)** | `.deb`, `.rpm` | Raspberry Pi / Asahi / etc. |
             | **Windows** | `*_x64-setup.exe` | standard installer |
             | **macOS (Intel)** | `*_x64.dmg` | macOS 10.15+ |
@@ -131,7 +131,18 @@ jobs:
 
             ### Linux — pick what fits your distro
 
-            **Flatpak (recommended — every distro, CachyOS / Arch / Fedora / Ubuntu / openSUSE / Mint / Pop!_OS):**
+            **Arch / CachyOS / Manjaro / EndeavourOS (native package — best on Hyprland):**
+            ```sh
+            sudo pacman -U ./framexshot_${{ env.APP_VERSION }}_x86_64.pkg.tar.zst
+            ```
+            Compiles against your system WebKit/GTK; capture uses `grim`+`slurp` directly (no Flatpak portal sandbox). Install optional Hyprland helpers: `sudo pacman -S hyprshot hyprland-contrib xdg-desktop-portal-hyprland`.
+
+            **Arch (AUR):**
+            ```sh
+            yay -S framexshot
+            ```
+
+            **Flatpak (every distro, self-contained runtime):**
             ```sh
             flatpak install --user ./framexshot_${{ env.APP_VERSION }}_amd64.flatpak
             ```
@@ -145,11 +156,6 @@ jobs:
             **Fedora / RHEL / Nobara / openSUSE:**
             ```sh
             sudo dnf install ./framexshot_${{ env.APP_VERSION }}_x86_64.rpm
-            ```
-
-            **Arch / Manjaro / EndeavourOS (AUR — recommended):**
-            ```sh
-            yay -S framexshot
             ```
 
             **Build from source (against your system libs):**
@@ -302,6 +308,51 @@ jobs:
           gh release upload "${{ github.ref_name }}" \
             framexshot_${{ env.APP_VERSION }}_amd64.flatpak \
             --clobber || echo "Flatpak upload failed; release was still published."
+
+  # ── Build native Arch .pkg.tar.zst (best for CachyOS / Arch / Hyprland) ──
+  arch:
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    if: startsWith(github.ref, 'refs/tags/')
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          pacman -Syu --noconfirm \
+            base-devel git rsync \
+            pnpm nodejs rust cargo \
+            webkit2gtk-4.1 gtk3 libsoup libappindicator-gtk3 tesseract \
+            grim slurp wl-clipboard xclip xsel xdg-desktop-portal \
+            zenity kdialog xdotool openssl librsvg appmenu-gtk-module \
+            hyprshot hyprland-contrib xdg-desktop-portal-hyprland github-cli
+
+      - name: Resolve app version
+        run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Build Arch package
+        run: |
+          useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          su builder -c "$GITHUB_WORKSPACE/packaging/arch/build-package.sh ${APP_VERSION}"
+
+      - name: Validate Arch package
+        run: test -f "framexshot_${{ env.APP_VERSION }}_x86_64.pkg.tar.zst"
+
+      - name: Upload Arch package to release (best-effort)
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            "framexshot_${{ env.APP_VERSION }}_x86_64.pkg.tar.zst" \
+            --clobber || echo "Arch package upload failed; release was still published."
 
   # ── Publish draft → public release ───────────────────────────────────────
   # Publishes as soon as the native build matrix succeeds. Flatpak is

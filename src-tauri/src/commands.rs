@@ -5,7 +5,9 @@ use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
-use crate::capture::{capture_fullscreen, capture_region as capture_region_tool, capture_window};
+use crate::capture::{
+    capture_fullscreen, capture_region as capture_region_tool, capture_window, has_binary,
+};
 use crate::clipboard::{copy_image_to_clipboard, copy_text_to_clipboard};
 use crate::image::{
     copy_screenshot_to_dir, crop_image, render_image_with_effects, save_base64_image, CropRegion,
@@ -27,17 +29,6 @@ fn is_wayland() -> bool {
         || std::env::var("XDG_SESSION_TYPE")
             .map(|v| v.to_lowercase() == "wayland")
             .unwrap_or(false)
-}
-
-/// Check if a binary is available on PATH
-fn has_binary(name: &str) -> bool {
-    Command::new("which")
-        .arg(name)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -545,7 +536,7 @@ pub async fn read_file_as_base64(path: String) -> Result<String, String> {
 
 /// Returns a CLONE of the stored screenshot for the selector overlay to display.
 #[tauri::command]
-pub async fn capture_screen_for_selector(app_handle: AppHandle) -> Result<String, String> {
+pub async fn capture_screen_for_selector(_app_handle: AppHandle) -> Result<String, String> {
     {
         let lock = PENDING_SCREENSHOT_B64
             .lock()
@@ -555,23 +546,38 @@ pub async fn capture_screen_for_selector(app_handle: AppHandle) -> Result<String
         }
     }
 
-    // Fallback if no stored screenshot
-    let path = capture_primary_monitor(app_handle).await?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let data_uri = file_to_data_uri(&path.to_string_lossy())?;
-        let _ = std::fs::remove_file(&path);
+    // Linux uses native tools (grim/slurp, spectacle, etc.) directly — the
+    // region-selector overlay is only used on Windows/macOS where interactive
+    // capture stores a pending fullscreen shot first. Never auto-capture here
+    // on Linux: the hidden selector window mounts at startup and would trigger
+    // a portal/grim call on every app launch.
+    #[cfg(target_os = "linux")]
+    {
+        return Err(
+            "No pending screenshot — region selector is not used on Linux".to_string(),
+        );
+    }
 
-        {
-            let mut lock = PENDING_SCREENSHOT_B64
-                .lock()
-                .map_err(|e| format!("Mutex: {}", e))?;
-            *lock = Some(data_uri.clone());
-        }
+    // Fallback if no stored screenshot (Windows/macOS only — see above).
+    #[cfg(not(target_os = "linux"))]
+    {
+        let path = capture_primary_monitor(_app_handle).await?;
+        return tauri::async_runtime::spawn_blocking(move || {
+            let data_uri = file_to_data_uri(&path.to_string_lossy())?;
+            let _ = std::fs::remove_file(&path);
 
-        Ok(data_uri)
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+            {
+                let mut lock = PENDING_SCREENSHOT_B64
+                    .lock()
+                    .map_err(|e| format!("Mutex: {}", e))?;
+                *lock = Some(data_uri.clone());
+            }
+
+            Ok(data_uri)
+        })
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?;
+    }
 }
 
 /// Crops the stored screenshot and saves to disk.

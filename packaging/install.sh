@@ -138,7 +138,7 @@ zypper_build=(
 # Optional capture tools — never abort if a distro lacks one.
 apt_optional=(grim slurp spectacle scrot maim)
 dnf_optional=(grim slurp spectacle scrot maim)
-pacman_optional=(grim slurp spectacle scrot maim)
+pacman_optional=(grim slurp spectacle scrot maim hyprshot hyprland-contrib xdg-desktop-portal-hyprland)
 zypper_optional=(grim slurp spectacle scrot maim)
 
 install_recommended() {

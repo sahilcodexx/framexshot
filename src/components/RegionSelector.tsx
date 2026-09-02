@@ -39,9 +39,10 @@ export function RegionSelector() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    loadScreenshot();
-  }, [loadScreenshot]);
+  // Do NOT capture on mount — the region-selector window is pre-created (hidden)
+  // at app startup. Loading a screenshot here would call xdg-desktop-portal /
+  // grim on every launch (and shows GDBus NotAllowed inside Flatpak).
+  // Capture only when the window is actually shown (focus / visibility / reload).
 
   // Listen to explicit backend signal and focus changes for when window is re-shown
   useEffect(() => {

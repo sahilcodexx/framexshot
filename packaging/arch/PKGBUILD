@@ -1,20 +1,22 @@
 # Maintainer: sahilcodex <sahil171759@gmail.com>
-# Contributor: FrameXShot Contributors
 #
-# Arch User Repository package for FrameXShot.
-# Builds from the GitHub source tarball so the binary is compiled against
-# your system libs (webkit2gtk-4.1 etc.) — no AppImage/Flatpak bundling.
-# On Hyprland, capture uses grim+slurp / hyprctl directly (no portal sandbox).
+# Native Arch package — compiles against your system WebKit/GTK (no Flatpak
+# sandbox). On Hyprland, region/screen/window capture uses grim+slurp and
+# hyprctl directly (no xdg-desktop-portal required).
 #
-# Submit to AUR:  git push aur@aur.archlinux.org:framexshot
-# Install:        yay -S framexshot   (or: paru -S framexshot)
+# CI / local build:
+#   ./packaging/arch/build-package.sh
 #
-# Keep in sync with packaging/arch/PKGBUILD (same recipe, tarball source URL).
+# Install:
+#   sudo pacman -U framexshot_<version>_x86_64.pkg.tar.zst
+#
+# AUR (same recipe, tarball source):
+#   packaging/aur/PKGBUILD
 
 pkgname=framexshot
 pkgver=1.0.6
 pkgrel=2
-pkgdesc="Beautiful, effortless screenshot tool for Linux — capture regions, screens, windows or text (OCR), then edit them with frames, backgrounds, effects and annotations."
+pkgdesc="Beautiful, effortless screenshot tool for Linux — capture regions, screens, windows or text (OCR), then edit with frames, backgrounds, effects and annotations."
 arch=('x86_64' 'aarch64')
 url="https://github.com/sahilcodexx/framexshot"
 license=('MIT')
@@ -44,6 +46,9 @@ makedepends=(
   'librsvg'
   'openssl'
 )
+# pnpm is NOT a makedep — makepkg would try `pacman -S pnpm` and fail if you
+# already installed pnpm via npm/corepack (file conflicts on /usr/bin/pn etc.).
+# Install pnpm yourself: `sudo pacman -S pnpm` OR `npm install -g pnpm`
 optdepends=(
   'pnpm: frontend build tool (or use npm-installed pnpm / corepack)'
   'appmenu-gtk-module: global menu integration in some desktop environments'
@@ -55,11 +60,11 @@ optdepends=(
   'maim: X11 region capture fallback'
   'cosmic-screenshot: COSMIC desktop capture support'
 )
-source=("$url/archive/v$pkgver.tar.gz")
-sha256sums=('SKIP')  # run updpkgsums before publishing to AUR
+source=("framexshot-${pkgver}.tar.gz")
+sha256sums=('SKIP')
 
 build() {
-  cd "$srcdir/$pkgname-$pkgver"
+  cd "$srcdir/framexshot-$pkgver"
 
   if ! command -v pnpm >/dev/null; then
     echo "ERROR: pnpm not found on PATH."
@@ -69,16 +74,19 @@ build() {
   fi
 
   pnpm install --frozen-lockfile
+  # Must use `tauri build` — plain `cargo build` produces a ~15 MB binary
+  # WITHOUT embedded frontend assets → blank WebKit window ("Operation was cancelled").
   pnpm tauri build --no-bundle
 
   if ! strings "src-tauri/target/release/framexshot" | grep -q '/assets/index-'; then
     echo "ERROR: Frontend assets were not embedded into the release binary."
+    echo "       Re-run: rm -rf src-tauri/target dist && pnpm tauri build --no-bundle"
     exit 1
   fi
 }
 
 package() {
-  cd "$srcdir/$pkgname-$pkgver"
+  cd "$srcdir/framexshot-$pkgver"
 
   install -Dm755 "src-tauri/target/release/framexshot" \
     "$pkgdir/usr/bin/framexshot"

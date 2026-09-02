@@ -105,6 +105,26 @@ sudo apt install ./framexshot_*_amd64.deb
 sudo dnf install ./framexshot-*_x86_64.rpm
 ```
 
+### 🏔️ Arch Linux / CachyOS (native package — recommended on Hyprland)
+
+Download `framexshot_<version>_x86_64.pkg.tar.zst` from [GitHub Releases](https://github.com/sahilcodexx/framexshot/releases) and install:
+
+```bash
+sudo pacman -U ./framexshot_*_x86_64.pkg.tar.zst
+```
+
+The native package compiles against your system WebKit/GTK — no Flatpak sandbox. On Hyprland, capture uses `grim`+`slurp` directly (no `xdg-desktop-portal` screenshot calls). Optional Hyprland helpers:
+
+```bash
+sudo pacman -S hyprshot hyprland-contrib xdg-desktop-portal-hyprland
+```
+
+**Build the package locally:**
+
+```bash
+./packaging/arch/build-package.sh
+```
+
 ### 🏔️ Arch Linux (AUR)
 
 For Arch, Manjaro, and EndeavourOS, install from the AUR (any AUR helper works):
@@ -114,7 +134,7 @@ yay -S framexshot
 # or: paru -S framexshot
 ```
 
-The PKGBUILD pulls in the runtime dependencies (`webkit2gtk-4.1`, `gtk3`, `libayatana-appindicator`, `tesseract`, capture tools) automatically.
+The PKGBUILD pulls in runtime dependencies (`webkit2gtk-4.1`, `gtk3`, `grim`, `slurp`, `tesseract`, etc.) automatically.
 
 ### 🐧 Universal CLI Installer (all other distros)
 
