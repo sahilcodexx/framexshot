@@ -332,7 +332,7 @@ jobs:
             grim slurp wl-clipboard xclip xsel xdg-desktop-portal \
             zenity kdialog xdotool openssl librsvg appmenu-gtk-module \
             hyprshot xdg-desktop-portal-hyprland github-cli \
-            clang libclang pkgconf
+            clang pkgconf
 
       - name: Resolve app version
         run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
