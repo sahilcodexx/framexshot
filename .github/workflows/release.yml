@@ -353,15 +353,14 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
-          # Write the secret to a file (preserves newlines, which `printf |` mangles)
-          # then import from the file. gpg rejects piped input that doesn't have
-          # exactly the right line endings.
-          printf '%s\n' "$GPG_PRIVATE_KEY" > /tmp/gpg-private.key
-          echo "  secret size: $(stat -c '%s' /tmp/gpg-private.key) bytes"
-          echo "  first line:  $(head -1 /tmp/gpg-private.key)"
-          echo "  last line:   $(tail -1 /tmp/gpg-private.key)"
-          gpg --batch --import /tmp/gpg-private.key
-          rm -f /tmp/gpg-private.key
+          # Heredoc preserves newlines from the secret exactly. Previous
+          # attempts with `printf |` or `printf > file` ended up writing
+          # the key without the BEGIN/END armor lines, making gpg reject
+          # the data. Heredoc input mode (<< EOF, unquoted) expands $vars
+          # but keeps all newlines intact.
+          gpg --batch --import <<EOF
+          $GPG_PRIVATE_KEY
+          EOF
           KEY_ID=$(gpg --list-secret-keys --keyid-format=long | \
             grep -E '^sec' | head -1 | awk '{print $2}' | cut -d/ -f2)
           if [ -z "$KEY_ID" ]; then
