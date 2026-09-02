@@ -353,14 +353,21 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
-          # Heredoc preserves newlines from the secret exactly. Previous
-          # attempts with `printf |` or `printf > file` ended up writing
-          # the key without the BEGIN/END armor lines, making gpg reject
-          # the data. Heredoc input mode (<< EOF, unquoted) expands $vars
-          # but keeps all newlines intact.
-          gpg --batch --import <<EOF
-          $GPG_PRIVATE_KEY
-          EOF
+          # Write env var to a file (it MUST match /tmp/gpg-private.key from
+          # the maintainer's local machine, SHA256 10ccd4a81a83d73390c6960f854347bc2b427b089c8acebdf6004d606e44f1b6)
+          printf '%s' "$GPG_PRIVATE_KEY" > /tmp/gpg-private.key
+          EXPECTED_SHA256="10ccd4a81a83d73390c6960f854347bc2b427b089c8acebdf6004d606e44f1b6"
+          ACTUAL_SHA256=$(sha256sum /tmp/gpg-private.key | awk '{print $1}')
+          echo "Expected SHA256: $EXPECTED_SHA256"
+          echo "Actual   SHA256: $ACTUAL_SHA256"
+          if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+            echo "ERROR: GPG_PRIVATE_KEY secret is corrupt (hash mismatch)." >&2
+            echo "       Re-run: gh secret set GPG_PRIVATE_KEY < /tmp/gpg-private.key" >&2
+            echo "       File size: $(stat -c '%s' /tmp/gpg-private.key) bytes (expected 6772)" >&2
+            exit 1
+          fi
+          gpg --batch --import /tmp/gpg-private.key
+          rm -f /tmp/gpg-private.key
           KEY_ID=$(gpg --list-secret-keys --keyid-format=long | \
             grep -E '^sec' | head -1 | awk '{print $2}' | cut -d/ -f2)
           if [ -z "$KEY_ID" ]; then
