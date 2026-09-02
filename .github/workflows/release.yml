@@ -353,9 +353,15 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
-          # Import the maintainer key (armored, including BEGIN/END lines).
-          # GitHub Actions secrets preserve the full string including newlines.
-          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          # Write the secret to a file (preserves newlines, which `printf |` mangles)
+          # then import from the file. gpg rejects piped input that doesn't have
+          # exactly the right line endings.
+          printf '%s\n' "$GPG_PRIVATE_KEY" > /tmp/gpg-private.key
+          echo "  secret size: $(stat -c '%s' /tmp/gpg-private.key) bytes"
+          echo "  first line:  $(head -1 /tmp/gpg-private.key)"
+          echo "  last line:   $(tail -1 /tmp/gpg-private.key)"
+          gpg --batch --import /tmp/gpg-private.key
+          rm -f /tmp/gpg-private.key
           KEY_ID=$(gpg --list-secret-keys --keyid-format=long | \
             grep -E '^sec' | head -1 | awk '{print $2}' | cut -d/ -f2)
           if [ -z "$KEY_ID" ]; then
@@ -364,7 +370,6 @@ jobs:
             exit 1
           fi
           echo "Signing with key ID: $KEY_ID"
-          # gpg-agent passphrase via loopback pinentry.
           echo "$GPG_PASSPHRASE" | gpg --batch --pinentry-mode loopback \
             --passphrase-fd 0 --yes --detach-sign \
             --output "framexshot_${{ env.APP_VERSION }}_x86_64.pkg.tar.zst.sig" \
