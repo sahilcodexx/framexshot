@@ -178,7 +178,7 @@ jobs:
             open framexshot_${{ env.APP_VERSION }}_x64.dmg
             ```
 
-            > **Note:** AppImage builds were dropped starting v1.0.6. The Tauri-bundled `linuxdeploy` ships `strip` (binutils 2.35) which cannot process CachyOS / Arch libraries containing `.relr.dyn` RELR relocations, and rolling distros ship a different libwayland/libgbm than the AppImage bundles. Flatpak sidesteps both problems by pinning a stable runtime.
+            > **Note:** AppImage builds were dropped starting v1.0.0. The Tauri-bundled `linuxdeploy` ships `strip` (binutils 2.35) which cannot process CachyOS / Arch libraries containing `.relr.dyn` RELR relocations, and rolling distros ship a different libwayland/libgbm than the AppImage bundles. Flatpak sidesteps both problems by pinning a stable runtime.
 
             ## What's New
             ${{ steps.release_notes.outputs.notes }}

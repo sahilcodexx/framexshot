@@ -39,12 +39,11 @@
     <keyword>ocr</keyword>
   </keywords>
   <releases>
-    <release version="1.0.6" date="2026-09-01">
+    <release version="1.0.0" date="2026-09-02">
       <description>
-        <p>Capture fix on Wayland: skip xdg-desktop-portal calls inside the Flatpak sandbox and route all host tools (grim, slurp, hyprctl, spectacle) through flatpak-spawn. Fixes the GDBus "NotAllowed" error on Hyprland and other wlroots compositors. Also drops the AppImage job from CI (the bundled strip toolchain was incompatible with rolling distros) and bumps the frontend to pnpm 11.</p>
+        <p>First proper release. Capture works end-to-end on CachyOS / Arch / Hyprland via system grim+slurp+hyprctl (no Flatpak sandbox, no portal). Native Arch .pkg.tar.zst is the recommended install path; .deb and .rpm available for Debian/Ubuntu and Fedora. AppImage was dropped because Tauri's bundled linuxdeploy ships binutils 2.35 which can't process CachyOS-era libraries with .relr.dyn relocations. The Flatpak still ships as a universal-fallback for non-Arch distros.</p>
       </description>
     </release>
-    <release version="1.0.0" date="2026-08-09"/>
   </releases>
   <content_rating type="oars-1.1"/>
 </component>
