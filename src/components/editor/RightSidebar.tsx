@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { getAssetCategories, isDataUrl } from "@/lib/asset-registry";
 import { gradientOptions } from "./BackgroundSelector";
 import { BorderPresets } from "./BorderPresets";
+import { StyleSelector } from "./StyleSelector";
 import { ShadowPresets } from "./ShadowPresets";
 import { ImagePositionControl } from "./ImagePositionControl";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -23,6 +24,7 @@ import type {
   BackgroundType,
   BorderPresetId,
   EditorSettings,
+  FrameStyleId,
   ShadowPresetId,
 } from "@/stores/editorStore";
 
@@ -90,6 +92,12 @@ export interface RightSidebarActions {
   setBorderPreset: (preset: BorderPresetId) => void;
   setBorderRadiusTransient?: (v: number) => void;
   setBorderRadius: (v: number) => void;
+  // Frame style (Frosted, Smoky, Glow, etc.)
+  setFrameStyle: (style: FrameStyleId) => void;
+  setFramePaddingTransient: (v: number) => void;
+  setFramePadding: (v: number) => void;
+  setFrameOpacityTransient: (v: number) => void;
+  setFrameOpacity: (v: number) => void;
   // Shadow
   setShadowPreset: (preset: ShadowPresetId) => void;
   setShowMockup: (show: boolean) => void;
@@ -1078,6 +1086,16 @@ const BorderSection = memo(function BorderSection({
 }) {
   return (
     <div className="space-y-4">
+      <StyleSelector
+        frameStyle={settings.frameStyle as FrameStyleId}
+        framePadding={settings.framePadding}
+        frameOpacity={settings.frameOpacity}
+        onChange={actions.setFrameStyle}
+        onFramePaddingChangeTransient={actions.setFramePaddingTransient}
+        onFramePaddingChange={actions.setFramePadding}
+        onFrameOpacityChangeTransient={actions.setFrameOpacityTransient}
+        onFrameOpacityChange={actions.setFrameOpacity}
+      />
       <BorderPresets
         borderPreset={settings.borderPreset}
         borderRadius={settings.borderRadius}
@@ -1088,7 +1106,13 @@ const BorderSection = memo(function BorderSection({
       />
     </div>
   );
-}, makeSettingsComparator("borderPreset", "borderRadius"));
+}, makeSettingsComparator(
+  "borderPreset",
+  "borderRadius",
+  "frameStyle",
+  "framePadding",
+  "frameOpacity"
+));
 
 // ---------------------------------------------------------------------------
 // Section: Shadow
