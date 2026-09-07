@@ -513,7 +513,7 @@ export function ImageEditor({ imagePath, onSave, onCancel }: ImageEditorProps) {
           </div>
         </div>
 
-        <div className="w-[308px] xl:w-[348px] shrink-0 p-3 -mt-8 flex flex-col bg-canvas min-w-0">
+        <div className="w-[318px] xl:w-[358px] shrink-0 p-3 -mt-8 flex flex-col bg-canvas min-w-0">
           <div className="flex-1 flex flex-col min-h-0 rounded-2xl border border-border bg-card shadow-sm dark:shadow-xl overflow-hidden">
             <div className="flex-1 min-h-0 overflow-y-auto sidebar-scroll">
               <div className="pt-3 pb-4">
