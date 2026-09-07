@@ -1,5 +1,5 @@
-import { memo } from "react";
-import { PillSlider } from "@/components/ui/pill-slider";
+import { memo, useEffect, useRef } from "react";
+import { FluidSlider } from "@/components/motion/range-slider-fluid";
 import type { BorderPresetId } from "@/lib/frame-presets";
 import { BORDER_PRESETS } from "@/lib/frame-presets";
 import {
@@ -54,8 +54,19 @@ export const BorderPresets = memo(function BorderPresets({
   onPresetChange,
   onBorderRadiusChangeTransient,
   onBorderRadiusChange,
-  onIsDraggingChange,
+  onIsDraggingChange: _onIsDraggingChange,
 }: BorderPresetsProps) {
+  // Debounce commit (history-pushing) updates so one drag = one undo step,
+  // not one per pixel. FluidSlider's onValueChange fires on every drag pixel;
+  // the transient handler is fired synchronously for a smooth preview, the
+  // commit (history) handler is fired 150ms after the value settles.
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+    };
+  }, []);
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="space-y-4">
@@ -92,16 +103,22 @@ export const BorderPresets = memo(function BorderPresets({
         </div>
 
         <div className="space-y-2">
-          <PillSlider
+          <FluidSlider
             label="Corner size"
             value={borderRadius}
-            displayValue={`${borderRadius}px`}
+            format={(v) => `${v}px`}
             min={0}
             max={50}
             step={1}
-            onChangeTransient={onBorderRadiusChangeTransient}
-            onChange={onBorderRadiusChange}
-            onDragChange={onIsDraggingChange}
+            onValueChange={(v) => {
+              onBorderRadiusChangeTransient?.(v);
+              if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+              commitTimerRef.current = setTimeout(() => {
+                onBorderRadiusChange?.(v);
+                commitTimerRef.current = null;
+              }, 150);
+            }}
+            aria-label="Corner size"
           />
         </div>
       </div>

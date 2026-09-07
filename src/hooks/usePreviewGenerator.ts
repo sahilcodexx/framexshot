@@ -655,7 +655,7 @@ export function usePreviewGenerator({
 
   // Read the drag flag directly from the store. A selector here would
   // re-render this hook on every drag pixel; the store's `_isDragging` is
-  // a separate slice that only PillSliders touch, so we can read it via
+  // a separate slice that only sliders touch, so we can read it via
   // getState() inside the effect without subscribing.
   const isDraggingRef = useRef(false);
 
@@ -750,8 +750,8 @@ export function usePreviewGenerator({
   // Debounced preview generation + idle detection for effects.
   // While a slider is being dragged, we SKIP the regeneration entirely —
   // it's the difference between a smooth drag and a stuttery one. The
-  // PillSlider sets `_isDragging` on pointer-down and clears it on
-  // pointer-up; once it clears, the pending settings render immediately.
+  // slider wrapper sets `_isDragging` on the first onValueChange and clears
+  // it on commit; once it clears, the pending settings render immediately.
   useEffect(() => {
     if (!screenshotImage || !canvasRef.current) return;
 

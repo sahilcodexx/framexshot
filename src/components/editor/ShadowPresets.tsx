@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { PillSlider } from "@/components/ui/pill-slider";
+import { FluidSliderDebounced } from "@/components/motion/fluid-slider-debounced";
 import { Eye, EyeOff, Sun } from "lucide-react";
 import type { ShadowPresetId } from "@/lib/frame-presets";
 import { SHADOW_PRESETS } from "@/lib/frame-presets";
@@ -125,16 +125,17 @@ export const ShadowPresets = memo(function ShadowPresets({
       {/* Opacity */}
       {shadowPreset !== "none" && (
         <div className="space-y-2">
-          <PillSlider
+          <FluidSliderDebounced
             label="Strength"
             value={opacity}
-            displayValue={`${opacity}%`}
+            format={(v) => `${v}%`}
             min={0}
             max={100}
             step={1}
-            onChangeTransient={onOpacityChangeTransient}
-            onChange={onOpacityChange}
+            onValueChangeTransient={onOpacityChangeTransient}
+            onValueCommit={onOpacityChange}
             onDragChange={onIsDraggingChange}
+            aria-label="Shadow strength"
           />
         </div>
       )}

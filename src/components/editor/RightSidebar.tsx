@@ -3,7 +3,7 @@ import { Bookmark, ChevronDown, RotateCcw, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Store } from "@tauri-apps/plugin-store";
 import { Accordion } from "./Accordion";
-import { PillSlider } from "@/components/ui/pill-slider";
+import { FluidSliderDebounced } from "@/components/motion/fluid-slider-debounced";
 import { cn } from "@/lib/utils";
 import { getAssetCategories, isDataUrl } from "@/lib/asset-registry";
 import { gradientOptions } from "./BackgroundSelector";
@@ -321,23 +321,23 @@ const BackgroundSection = memo(function BackgroundSection({
 
   return (
     <div className="space-y-4">
-      <PillSlider
+      <FluidSliderDebounced
         label="Padding"
         value={Math.round((paddingValue / 400) * 100)}
-        displayValue={`${Math.round((paddingValue / 400) * 100)}%`}
+        format={(v) => `${v}%`}
         min={0}
         max={100}
-        // Padding bypasses `onChangeTransient` on purpose: the slider's
-        // visual is already ref-driven (the thumb/fill/value display move
-        // via direct DOM writes in PillSlider), and `usePreviewGenerator`
-        // skips canvas regeneration while `_isDragging` is true. The only
-        // thing the per-pixel transient did was push the new padding into
-        // the store — which re-rendered the whole Background section (with
-        // its 5 tab rows + 5 panels) on every drag tick. That's the lag
-        // the user was feeling. We commit on pointer-up instead, and the
-        // canvas regen + tree re-render happens exactly once.
-        onChange={(v) => actions.setAllPadding(Math.round((v / 100) * 400))}
+        // Padding bypasses per-pixel transient on purpose: the FluidSlider's
+        // visual is spring-driven, and `usePreviewGenerator` skips canvas
+        // regeneration while `isDragging` is true. The per-pixel transient
+        // would push the new padding into the store on every drag tick,
+        // re-rendering the whole Background section (5 tab rows + 5 panels)
+        // — that's the lag the user was feeling. We commit once after the
+        // debounce settles, and the canvas regen + tree re-render happens
+        // exactly once.
+        onValueCommit={(v) => actions.setAllPadding(Math.round((v / 100) * 400))}
         onDragChange={actions.setIsDragging}
+        aria-label="Padding"
       />
 
       <div
@@ -989,45 +989,49 @@ const AdjustmentsSection = memo(function AdjustmentsSection({
           <RotateCcw className="size-3" aria-hidden="true" />
         </button>
       </div>
-      <PillSlider
+      <FluidSliderDebounced
         label="Sharpness"
         value={settings.sharpness}
-        displayValue={`${settings.sharpness}%`}
+        format={(v) => `${v}%`}
         min={0}
         max={100}
-        onChangeTransient={actions.setSharpnessTransient}
-        onChange={actions.setSharpness}
+        onValueChangeTransient={actions.setSharpnessTransient}
+        onValueCommit={actions.setSharpness}
         onDragChange={actions.setIsDragging}
+        aria-label="Sharpness"
       />
-      <PillSlider
+      <FluidSliderDebounced
         label="Brightness"
         value={settings.brightness}
-        displayValue={`${settings.brightness > 0 ? "+" : ""}${settings.brightness}%`}
+        format={(v) => `${v > 0 ? "+" : ""}${v}%`}
         min={-100}
         max={100}
-        onChangeTransient={actions.setBrightnessTransient}
-        onChange={actions.setBrightness}
+        onValueChangeTransient={actions.setBrightnessTransient}
+        onValueCommit={actions.setBrightness}
         onDragChange={actions.setIsDragging}
+        aria-label="Brightness"
       />
-      <PillSlider
+      <FluidSliderDebounced
         label="Contrast"
         value={settings.contrast}
-        displayValue={`${settings.contrast > 0 ? "+" : ""}${settings.contrast}%`}
+        format={(v) => `${v > 0 ? "+" : ""}${v}%`}
         min={-100}
         max={100}
-        onChangeTransient={actions.setContrastTransient}
-        onChange={actions.setContrast}
+        onValueChangeTransient={actions.setContrastTransient}
+        onValueCommit={actions.setContrast}
         onDragChange={actions.setIsDragging}
+        aria-label="Contrast"
       />
-      <PillSlider
+      <FluidSliderDebounced
         label="Saturation"
         value={settings.saturation}
-        displayValue={`${settings.saturation > 0 ? "+" : ""}${settings.saturation}%`}
+        format={(v) => `${v > 0 ? "+" : ""}${v}%`}
         min={-100}
         max={100}
-        onChangeTransient={actions.setSaturationTransient}
-        onChange={actions.setSaturation}
+        onValueChangeTransient={actions.setSaturationTransient}
+        onValueCommit={actions.setSaturation}
         onDragChange={actions.setIsDragging}
+        aria-label="Saturation"
       />
     </div>
   );
@@ -1050,25 +1054,27 @@ const EffectsSection = memo(function EffectsSection({
           Background Effects
         </span>
       </div>
-      <PillSlider
+      <FluidSliderDebounced
         label="Gaussian Blur"
         value={settings.blurAmount}
-        displayValue={`${settings.blurAmount}px`}
+        format={(v) => `${v}px`}
         min={0}
         max={50}
-        onChangeTransient={actions.setBlurAmountTransient}
-        onChange={actions.setBlurAmount}
+        onValueChangeTransient={actions.setBlurAmountTransient}
+        onValueCommit={actions.setBlurAmount}
         onDragChange={actions.setIsDragging}
+        aria-label="Gaussian blur"
       />
-      <PillSlider
+      <FluidSliderDebounced
         label="Noise"
         value={settings.noiseAmount}
-        displayValue={`${settings.noiseAmount}%`}
+        format={(v) => `${v}%`}
         min={0}
         max={100}
-        onChangeTransient={actions.setNoiseAmountTransient}
-        onChange={actions.setNoiseAmount}
+        onValueChangeTransient={actions.setNoiseAmountTransient}
+        onValueCommit={actions.setNoiseAmount}
         onDragChange={actions.setIsDragging}
+        aria-label="Noise"
       />
     </div>
   );
@@ -1138,33 +1144,36 @@ const ShadowSection = memo(function ShadowSection({
         showAdvanced
       >
         <div className="space-y-3 pt-2">
-          <PillSlider
+          <FluidSliderDebounced
             label="Blur"
             value={settings.shadow.blur}
-            displayValue={`${settings.shadow.blur}px`}
+            format={(v) => `${v}px`}
             min={0}
             max={80}
-            onChangeTransient={actions.setShadowBlurTransient}
-            onChange={actions.setShadowBlur}
+            onValueChangeTransient={actions.setShadowBlurTransient}
+            onValueCommit={actions.setShadowBlur}
             onDragChange={actions.setIsDragging}
+            aria-label="Shadow blur"
           />
-          <PillSlider
+          <FluidSliderDebounced
             label="Offset X"
             value={settings.shadow.offsetX}
-            displayValue={`${settings.shadow.offsetX}px`}
+            format={(v) => `${v}px`}
             min={-50}
             max={50}
-            onChange={actions.setShadowOffsetX}
+            onValueCommit={actions.setShadowOffsetX}
             onDragChange={actions.setIsDragging}
+            aria-label="Shadow offset X"
           />
-          <PillSlider
+          <FluidSliderDebounced
             label="Offset Y"
             value={settings.shadow.offsetY}
-            displayValue={`${settings.shadow.offsetY}px`}
+            format={(v) => `${v}px`}
             min={-50}
             max={50}
-            onChange={actions.setShadowOffsetY}
+            onValueCommit={actions.setShadowOffsetY}
             onDragChange={actions.setIsDragging}
+            aria-label="Shadow offset Y"
           />
         </div>
       </ShadowPresets>

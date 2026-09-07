@@ -1,5 +1,5 @@
 import { memo, useRef, useCallback, useEffect } from "react";
-import { PillSlider } from "@/components/ui/pill-slider";
+import { FluidSliderDebounced } from "@/components/motion/fluid-slider-debounced";
 import { RotateCcw } from "lucide-react";
 import {
   Tooltip,
@@ -170,16 +170,17 @@ export const ImagePositionControl = memo(function ImagePositionControl({
 
         {/* Zoom slider */}
         <div className="space-y-2">
-          <PillSlider
+          <FluidSliderDebounced
             label="Zoom"
             value={scalePercent}
-            displayValue={`${scalePercent}%`}
+            format={(v) => `${v}%`}
             min={50}
             max={200}
             step={1}
-            onChangeTransient={(v) => onScaleChangeTransient(v / 100)}
-            onChange={(v) => onScaleChange(v / 100)}
+            onValueChangeTransient={(v) => onScaleChangeTransient(v / 100)}
+            onValueCommit={(v) => onScaleChange(v / 100)}
             onDragChange={onIsDraggingChange}
+            aria-label="Image zoom"
           />
           <div className="flex justify-between text-[9px] text-muted-foreground/60 font-mono">
             <span>50%</span>
