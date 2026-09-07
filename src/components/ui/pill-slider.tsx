@@ -1,8 +1,15 @@
 import {
   type ChangeEvent,
+  useEffect,
   useRef,
   useState,
 } from "react";
+import {
+  animate,
+  motion,
+  useSpring,
+  useTransform,
+} from "motion/react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -100,13 +107,62 @@ export function PillSlider({
     Math.min(100, ((displayValueNum - min) / (max - min)) * 100)
   );
 
+  // Spring-driven percent. During a drag, the spring is set directly
+  // (so the visual tracks the cursor 1:1). When the prop changes externally
+  // — undo, redo, set-as-default, store init — the spring animates the
+  // visual from its current value to the new target with rubbery physics.
+  // That gives the "stretch" feel on commit without adding latency during
+  // the drag itself.
+  const springPercent = useSpring(percent, {
+    stiffness: 320,
+    damping: 28,
+    mass: 0.9,
+  });
+  // While dragging, use the raw value (no spring tracking) so the thumb
+  // never lags the cursor. When the drag ends, the spring eases into the
+  // final committed value, which is the same as `percent` so it lands
+  // exactly where the user let go.
+  useEffect(() => {
+    if (dragValue === null) springPercent.set(percent);
+  }, [percent, dragValue, springPercent]);
+
+  // Derived motion values for the fill and thumb — read from the spring
+  // so they animate smoothly when the prop changes.
+  const fillWidth = useTransform(springPercent, (p) => `${p}%`);
+  const thumbLeft = useTransform(springPercent, (p) => `calc(${p}% - 1px)`);
+  // Spring for the displayed number — rubbery count-up/down on commit.
+  const springValue = useSpring(displayValueNum, {
+    stiffness: 380,
+    damping: 32,
+    mass: 0.7,
+  });
+  const [shownValue, setShownValue] = useState<number>(displayValueNum);
+  useEffect(() => {
+    if (dragValue === null) {
+      const controls = animate(springValue, displayValueNum, {
+        type: "spring",
+        stiffness: 380,
+        damping: 32,
+        mass: 0.7,
+      });
+      return controls.stop;
+    }
+  }, [displayValueNum, dragValue, springValue]);
+  useEffect(() => {
+    return springValue.on("change", (v) => setShownValue(v));
+  }, [springValue]);
+
   // Imperatively write the new position to the DOM. Bypasses React
   // reconciliation for the parts that move every frame, so the cursor and
   // the visual never drift apart.
   const applyVisual = (next: number) => {
     const p = Math.max(0, Math.min(100, ((next - min) / (max - min)) * 100));
-    if (fillRef.current) fillRef.current.style.width = `${p}%`;
-    if (thumbRef.current) thumbRef.current.style.left = `calc(${p}% - 1px)`;
+    // During a drag, set the springs directly (no easing) so the visual
+    // tracks the cursor. The spring is the same one that animates on
+    // commit, so when the drag ends the springs are already at the final
+    // value and nothing needs to settle.
+    springPercent.set(p);
+    springValue.set(next);
     if (valueSpanRef.current) valueSpanRef.current.textContent = formatDisplay(next);
   };
 
@@ -120,19 +176,9 @@ export function PillSlider({
     return String(v);
   };
 
-  // If the prop changes while we're not dragging (undo / redo / external
-  // reset), make sure the DOM reflects the prop. This is a no-op when the
-  // visual is already in sync.
-  if (dragValue === null && inputRef.current) {
-    const expectedFill = `${percent}%`;
-    const expectedLeft = `calc(${percent}% - 1px)`;
-    if (fillRef.current && fillRef.current.style.width !== expectedFill) {
-      fillRef.current.style.width = expectedFill;
-    }
-    if (thumbRef.current && thumbRef.current.style.left !== expectedLeft) {
-      thumbRef.current.style.left = expectedLeft;
-    }
-  }
+  // (No imperative re-sync block needed: the `useEffect` above writes
+  // the spring's value whenever `percent` changes outside a drag, and
+  // the spring's motion values drive the fill + thumb styles directly.)
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const newValue = Number(e.target.value);
@@ -164,8 +210,16 @@ export function PillSlider({
 
   return (
     <div className={cn("flex items-center gap-3 min-w-0", className)}>
-      {/* Pill container — the slider track, the filled portion, the label, and the thumb all live inside. */}
-      <div
+      {/* Pill container — the slider track, the filled portion, the label, and the thumb all live inside.
+          The motion wrapper gives the pill a spring-driven scale on focus/hover/tap, so it "stretches"
+          outward when the user reaches for it (matching the reference layout where the active slider
+          visibly grows while the others compress). */}
+      <motion.div
+        layout
+        transition={{ type: "spring", stiffness: 380, damping: 30, mass: 0.85 }}
+        whileHover={{ scale: 1.012 }}
+        whileFocus={{ scale: 1.018 }}
+        whileTap={{ scale: 0.992 }}
         className={cn(
           "relative h-9 flex-1 min-w-0 overflow-hidden rounded-full select-none",
           "bg-secondary border border-border",
@@ -175,14 +229,14 @@ export function PillSlider({
           disabled && "opacity-50"
         )}
       >
-        {/* Filled portion — width is mutated imperatively during drag,
-            and reconciled from the prop when not dragging. No width
-            transition: even a 100ms tween made the line visibly chase
-            the cursor. */}
-        <div
+        {/* Filled portion — width is driven by the spring `fillWidth` motion
+            value. During a drag we set the spring directly (no easing) so
+            the fill tracks the cursor. When the prop changes externally,
+            the spring animates the fill into the new position. */}
+        <motion.div
           ref={fillRef}
           className="pointer-events-none absolute inset-y-0 left-0 bg-foreground/[0.07]"
-          style={{ width: `${percent}%` }}
+          style={{ width: fillWidth }}
         />
 
         {/* Label inside the pill. Sits in the filled area; clips via overflow-hidden if value is very small. */}
@@ -213,19 +267,23 @@ export function PillSlider({
           className="absolute inset-0 h-full w-full cursor-ew-resize appearance-none bg-transparent opacity-0"
         />
 
-        {/* Visible thumb — thin vertical pill at the current value. */}
-        <div
+        {/* Visible thumb — thin vertical pill at the current value, driven
+            by the spring. Same drag/springs contract as the fill. */}
+        <motion.div
           ref={thumbRef}
           className={cn(
             "pointer-events-none absolute top-1/2 -translate-y-1/2",
             "h-4 w-[2px] rounded-full bg-foreground",
             "shadow-[0_0_0_0.5px_rgba(0,0,0,0.15),0_1px_2px_rgba(0,0,0,0.1)]"
           )}
-          style={{ left: `calc(${percent}% - 1px)` }}
+          style={{ left: thumbLeft }}
         />
-      </div>
+      </motion.div>
 
-      {/* Value — outside the pill, monospace for stable width. */}
+      {/* Value — outside the pill, monospace for stable width. The displayed
+          number is the spring-driven `shownValue` (rubbery count-up/down
+          when the prop changes), with the user's formatted `displayValue`
+          taking priority when provided. */}
       <span
         ref={valueSpanRef}
         className={cn(
@@ -233,7 +291,7 @@ export function PillSlider({
           "text-xs font-mono tabular-nums text-muted-foreground"
         )}
       >
-        {displayValue ?? value}
+        {displayValue ?? Math.round(shownValue * 100) / 100}
       </span>
     </div>
   );
