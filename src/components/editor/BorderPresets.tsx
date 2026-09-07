@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef } from "react";
-import { FluidSlider } from "@/components/motion/range-slider-fluid";
+import { RangeSliderDebounced } from "@/components/motion/range-slider-debounced";
 import type { BorderPresetId } from "@/lib/frame-presets";
 import { BORDER_PRESETS } from "@/lib/frame-presets";
 import {
@@ -54,7 +54,7 @@ export const BorderPresets = memo(function BorderPresets({
   onPresetChange,
   onBorderRadiusChangeTransient,
   onBorderRadiusChange,
-  onIsDraggingChange: _onIsDraggingChange,
+  onIsDraggingChange,
 }: BorderPresetsProps) {
   // Debounce commit (history-pushing) updates so one drag = one undo step,
   // not one per pixel. FluidSlider's onValueChange fires on every drag pixel;
@@ -103,21 +103,16 @@ export const BorderPresets = memo(function BorderPresets({
         </div>
 
         <div className="space-y-2">
-          <FluidSlider
-            label="Corner size"
+          <RangeSliderDebounced
+            label="Drag the handle"
             value={borderRadius}
             format={(v) => `${v}px`}
             min={0}
             max={50}
             step={1}
-            onValueChange={(v) => {
-              onBorderRadiusChangeTransient?.(v);
-              if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-              commitTimerRef.current = setTimeout(() => {
-                onBorderRadiusChange?.(v);
-                commitTimerRef.current = null;
-              }, 150);
-            }}
+            onValueChangeTransient={onBorderRadiusChangeTransient}
+            onValueCommit={onBorderRadiusChange}
+            onDragChange={onIsDraggingChange}
             aria-label="Corner size"
           />
         </div>
