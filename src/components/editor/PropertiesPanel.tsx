@@ -1,6 +1,6 @@
 import { useState, useEffect, memo } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { Slider } from "@/components/ui/slider";
+import { FluidSliderDebounced } from "@/components/motion/fluid-slider-debounced";
 import { Annotation, LineType, ArrowType } from "@/types/annotations";
 
 const stopPropagation = (e: React.KeyboardEvent) => {
@@ -76,25 +76,17 @@ export const PropertiesPanel = memo(function PropertiesPanel({ annotation, onUpd
           </button>
           {expandedSections.has("blur") && (
             <div className="space-y-2 pl-2">
-              <div>
-                <div className="text-xs text-foreground0 mb-1.5">Intensity</div>
-                <div className="flex items-center gap-2">
-                  <Slider
-                    value={[annotation.blurAmount]}
-                    onValueChange={([value]) => updateAnnotation({ blurAmount: value })}
-                    min={1}
-                    max={50}
-                    step={1}
-                  />
-                  <input
-                    type="text"
-                    value={annotation.blurAmount}
-                    onChange={(e) => updateAnnotation({ blurAmount: Number(e.target.value) || 20 })}
-                    onKeyDown={stopPropagation}
-                    className="w-14 px-1.5 py-1 bg-secondary border border-border rounded text-xs text-card-foreground"
-                  />
-                </div>
-              </div>
+              <FluidSliderDebounced
+                label="Intensity"
+                value={annotation.blurAmount}
+                format={(v) => `${v}px`}
+                min={1}
+                max={50}
+                step={1}
+                onValueChangeTransient={(v) => updateAnnotation({ blurAmount: v })}
+                onValueCommit={(v) => updateAnnotation({ blurAmount: v })}
+                aria-label="Annotation blur intensity"
+              />
             </div>
           )}
         </div>
@@ -129,32 +121,17 @@ export const PropertiesPanel = memo(function PropertiesPanel({ annotation, onUpd
                 />
               </div>
               <div>
-                <div className="text-xs text-foreground0 mb-1.5">Size</div>
-                <div className="flex items-center gap-2">
-                  <Slider
-                    value={[annotation.fontSize]}
-                    onValueChange={([value]) => updateAnnotation({ fontSize: value })}
-                    min={8}
-                    max={200}
-                    step={1}
-                  />
-                  <input
-                    type="text"
-                    value={annotation.fontSize}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === "" || /^\d*$/.test(val)) {
-                        updateAnnotation({ fontSize: val as unknown as number });
-                      }
-                    }}
-                    onBlur={(e) => {
-                      const val = Number(e.target.value);
-                      updateAnnotation({ fontSize: Math.max(8, Math.min(200, isNaN(val) ? 24 : val)) });
-                    }}
-                    onKeyDown={stopPropagation}
-                    className="w-14 px-1.5 py-1 bg-secondary border border-border rounded text-xs text-card-foreground"
-                  />
-                </div>
+                <FluidSliderDebounced
+                  label="Size"
+                  value={annotation.fontSize}
+                  format={(v) => `${v}px`}
+                  min={8}
+                  max={200}
+                  step={1}
+                  onValueChangeTransient={(v) => updateAnnotation({ fontSize: v })}
+                  onValueCommit={(v) => updateAnnotation({ fontSize: v })}
+                  aria-label="Text size"
+                />
               </div>
             </div>
           )}
@@ -267,35 +244,17 @@ export const PropertiesPanel = memo(function PropertiesPanel({ annotation, onUpd
                   />
               </div>
               <div>
-                <div className="text-xs text-foreground0 mb-1.5">Size</div>
-                <div className="flex items-center gap-2">
-                  <Slider
-                    value={[annotation.radius]}
-                    onValueChange={([value]) => updateAnnotation({ radius: value })}
-                    min={10}
-                    max={50}
-                    step={1}
-                  />
-                  <input
-                    type="text"
-                    value={annotation.radius}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === "" || val === "-") {
-                        updateAnnotation({ radius: val as unknown as number });
-                      } else {
-                        updateAnnotation({ radius: Number(val) || 20 });
-                      }
-                    }}
-                    onBlur={(e) => {
-                      if (e.target.value === "" || e.target.value === "-") {
-                        updateAnnotation({ radius: 20 });
-                      }
-                    }}
-                    onKeyDown={stopPropagation}
-                    className="w-14 px-1.5 py-1 bg-secondary border border-border rounded text-xs text-card-foreground"
-                  />
-                </div>
+                <FluidSliderDebounced
+                  label="Size"
+                  value={annotation.radius}
+                  format={(v) => `${v}px`}
+                  min={10}
+                  max={50}
+                  step={1}
+                  onValueChangeTransient={(v) => updateAnnotation({ radius: v })}
+                  onValueCommit={(v) => updateAnnotation({ radius: v })}
+                  aria-label="Number size"
+                />
               </div>
             </div>
           )}

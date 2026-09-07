@@ -1,7 +1,7 @@
 import { memo } from "react";
 import type { FrameStyleId } from "@/lib/frame-presets";
 import { FRAME_STYLES, getFrameStyle } from "@/lib/frame-presets";
-import { Slider } from "@/components/ui/slider";
+import { FluidSliderDebounced } from "@/components/motion/fluid-slider-debounced";
 import {
   Tooltip,
   TooltipContent,
@@ -153,40 +153,32 @@ export const StyleSelector = memo(function StyleSelector({
 
       {/* Padding + Opacity sliders — only shown when a frame style is active */}
       {isStyled && (
-        <div className="space-y-4 pt-1 border-t border-border">
+        <div className="space-y-3 pt-1 border-t border-border">
           {/* Padding */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs text-muted-foreground font-medium">Padding</label>
-              <span className="text-xs text-muted-foreground font-mono tabular-nums">{resolvedPadding}px</span>
-            </div>
-            <Slider
-              value={[resolvedPadding]}
-              onValueChange={(value) => onFramePaddingChangeTransient(value[0])}
-              onValueCommit={(value) => onFramePaddingChange(value[0])}
-              min={0}
-              max={40}
-              step={1}
-              className="w-full"
-            />
-          </div>
+          <FluidSliderDebounced
+            label="Padding"
+            value={resolvedPadding}
+            format={(v) => `${v}px`}
+            min={0}
+            max={40}
+            step={1}
+            onValueChangeTransient={(v) => onFramePaddingChangeTransient(v)}
+            onValueCommit={(v) => onFramePaddingChange(v)}
+            aria-label="Frame padding"
+          />
 
           {/* Opacity */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs text-muted-foreground font-medium">Opacity</label>
-              <span className="text-xs text-muted-foreground font-mono tabular-nums">{frameOpacity}%</span>
-            </div>
-            <Slider
-              value={[frameOpacity]}
-              onValueChange={(value) => onFrameOpacityChangeTransient(value[0])}
-              onValueCommit={(value) => onFrameOpacityChange(value[0])}
-              min={0}
-              max={100}
-              step={1}
-              className="w-full"
-            />
-          </div>
+          <FluidSliderDebounced
+            label="Opacity"
+            value={frameOpacity}
+            format={(v) => `${v}%`}
+            min={0}
+            max={100}
+            step={1}
+            onValueChangeTransient={(v) => onFrameOpacityChangeTransient(v)}
+            onValueCommit={(v) => onFrameOpacityChange(v)}
+            aria-label="Frame opacity"
+          />
         </div>
       )}
     </div>
